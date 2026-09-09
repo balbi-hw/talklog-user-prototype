@@ -1,6 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import Recorder from "./components/Recorder";
+import VoiceBubble from "./components/VoiceBubble";
+import { useVoicePlayback, PREVIEW_ID } from "./hooks/useVoicePlayback";
+import { useVoiceRecorder, type SentRecording } from "./hooks/useVoiceRecorder";
+import type { VoiceMessage } from "./lib/types";
 
 type Screen = "home" | "room" | "feedback" | "cards" | "review";
 
@@ -14,29 +19,41 @@ const Icon = ({ name }: { name: "home" | "chat" | "cards" | "user" }) => {
   return <svg aria-hidden="true" viewBox="0 0 24 24"><path d={paths[name]} /></svg>;
 };
 
-const Wave = ({ light = false }: { light?: boolean }) => (
-  <div className={`wave ${light ? "wave-light" : ""}`} aria-hidden="true">
-    {[9, 18, 12, 24, 16, 29, 20, 13, 23, 17, 27, 14, 21, 11, 18, 8].map((h, i) => <i key={i} style={{ height: h }} />)}
-  </div>
-);
+// 흐름 검증용 예시 메시지. 재생할 실제 소리가 없으므로 source 는 "mock" 이다 (FR-016).
+const INITIAL_MESSAGES: VoiceMessage[] = [
+  { id: "m1", sender: "partner", durationMs: 8000, sentAtLabel: "오전 9:41", source: "mock", url: null, readLabel: null },
+  { id: "m2", sender: "me", durationMs: 11000, sentAtLabel: "오전 9:46", source: "mock", url: null, readLabel: "읽음" },
+];
+
+const timeLabel = () =>
+  new Date().toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" });
 
 export default function TalklogApp() {
   const [screen, setScreen] = useState<Screen>("home");
-  const [recording, setRecording] = useState(false);
-  const [seconds, setSeconds] = useState(0);
   const [saved, setSaved] = useState(false);
   const [answer, setAnswer] = useState<"know" | "again" | null>(null);
-
-  useEffect(() => {
-    if (!recording) return;
-    const timer = window.setInterval(() => setSeconds((v) => v + 1), 1000);
-    return () => window.clearInterval(timer);
-  }, [recording]);
+  // 화면을 옮겨도 전송한 메시지가 유지되도록 대화 상태는 셸에서 소유한다.
+  const [messages, setMessages] = useState<VoiceMessage[]>(INITIAL_MESSAGES);
 
   const go = (next: Screen) => {
     setScreen(next);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+
+  const addRecordedMessage = useCallback((recording: SentRecording) => {
+    setMessages((current) => [
+      ...current,
+      {
+        id: `r${Date.now()}`,
+        sender: "me",
+        durationMs: recording.durationMs,
+        sentAtLabel: timeLabel(),
+        source: "recorded",
+        url: recording.url,
+        readLabel: null,
+      },
+    ]);
+  }, []);
 
   return (
     <main className="app-shell">
@@ -50,12 +67,7 @@ export default function TalklogApp() {
 
         {screen === "home" && <Home onOpenRoom={() => go("room")} onReview={() => go("review")} />}
         {screen === "room" && (
-          <Room
-            recording={recording}
-            seconds={seconds}
-            onRecord={() => { setRecording((v) => !v); if (recording) setSeconds(0); }}
-            onFeedback={() => go("feedback")}
-          />
+          <Room messages={messages} onSendRecording={addRecordedMessage} onFeedback={() => go("feedback")} />
         )}
         {screen === "feedback" && (
           <Feedback saved={saved} onBack={() => go("room")} onSave={() => setSaved(true)} onCards={() => go("cards")} />
@@ -105,22 +117,95 @@ function Home({ onOpenRoom, onReview }: { onOpenRoom: () => void; onReview: () =
   </section>;
 }
 
-function Room({ recording, seconds, onRecord, onFeedback }: { recording: boolean; seconds: number; onRecord: () => void; onFeedback: () => void }) {
+function Room({
+  messages,
+  onSendRecording,
+  onFeedback,
+}: {
+  messages: VoiceMessage[];
+  onSendRecording: (recording: SentRecording) => void;
+  onFeedback: () => void;
+}) {
   const [showScript, setShowScript] = useState(false);
   const [showTranslation, setShowTranslation] = useState(false);
+
+  const playback = useVoicePlayback();
+  const recorder = useVoiceRecorder({ onSend: onSendRecording });
+
+  const isPreviewPlaying = playback.activeId === PREVIEW_ID;
+
+  const handlePreview = () => {
+    if (recorder.previewUrl) playback.toggle(PREVIEW_ID, recorder.previewUrl, recorder.elapsedMs);
+  };
+
+  // 재생 중인 URL 이 곧 무효해지므로 먼저 재생을 멈춘다 (contracts/use-voice-playback.md 조항 5).
+  const handleRetake = () => {
+    if (isPreviewPlaying) playback.stop();
+    recorder.retake();
+  };
+  const handleCancel = () => {
+    if (isPreviewPlaying) playback.stop();
+    recorder.cancel();
+  };
+
+  const renderBubble = (message: VoiceMessage) => {
+    const url = message.url;
+    return (
+      <VoiceBubble
+        message={message}
+        isActive={playback.activeId === message.id}
+        progress={playback.progress}
+        onToggle={url ? () => playback.toggle(message.id, url, message.durationMs) : undefined}
+      />
+    );
+  };
 
   return <section className="screen room-screen">
     <div className="room-heading"><div className="friend-avatar">유</div><div><h1>유키와 일본어 대화</h1><p><span /> 일본어 학습 중</p></div><button aria-label="더 보기">•••</button></div>
     <div className="day-divider"><span>오늘</span></div>
-    <div className="chat partner"><div className="mini-avatar">유</div><div className="partner-message"><div className="bubble audio-bubble"><button aria-label="음성 재생">▶</button><Wave /><time>0:08</time></div><div className="detail-toggles"><button className={showScript ? "active" : ""} onClick={() => setShowScript((visible) => !visible)} aria-expanded={showScript} aria-controls="partner-script">스크립트 <span>{showScript ? "⌃" : "⌄"}</span></button><button className={showTranslation ? "active" : ""} onClick={() => setShowTranslation((visible) => !visible)} aria-expanded={showTranslation} aria-controls="partner-translation">번역 <span>{showTranslation ? "⌃" : "⌄"}</span></button></div>{showScript && <div id="partner-script" className="message-details"><span>스크립트</span><p className="transcript">週末は何をして過ごしたの？</p></div>}{showTranslation && <div id="partner-translation" className="message-details translation-detail"><span>번역</span><p>주말에는 무엇을 하며 보냈어?</p></div>}<small>오전 9:41</small></div></div>
-    <div className="chat mine"><div><div className="bubble mine-bubble"><button aria-label="음성 재생">▶</button><Wave light /><time>0:11</time></div><small>읽음 · 오전 9:46</small></div></div>
+
+    {messages.map((message) => message.sender === "partner" ? (
+      <div className="chat partner" key={message.id}>
+        <div className="mini-avatar">유</div>
+        <div className="partner-message">
+          {renderBubble(message)}
+          {/* 스크립트·번역은 STT 가 붙은 예시 메시지에만 있다. 실제 녹음의 STT 는 범위 밖이다. */}
+          {message.source === "mock" && <>
+            <div className="detail-toggles">
+              <button className={showScript ? "active" : ""} onClick={() => setShowScript((visible) => !visible)} aria-expanded={showScript} aria-controls="partner-script">스크립트 <span>{showScript ? "⌃" : "⌄"}</span></button>
+              <button className={showTranslation ? "active" : ""} onClick={() => setShowTranslation((visible) => !visible)} aria-expanded={showTranslation} aria-controls="partner-translation">번역 <span>{showTranslation ? "⌃" : "⌄"}</span></button>
+            </div>
+            {showScript && <div id="partner-script" className="message-details"><span>스크립트</span><p className="transcript">週末は何をして過ごしたの？</p></div>}
+            {showTranslation && <div id="partner-translation" className="message-details translation-detail"><span>번역</span><p>주말에는 무엇을 하며 보냈어?</p></div>}
+          </>}
+          <small>{message.sentAtLabel}</small>
+        </div>
+      </div>
+    ) : (
+      <div className="chat mine" key={message.id}>
+        <div>
+          {renderBubble(message)}
+          <small>{[message.readLabel, message.sentAtLabel].filter(Boolean).join(" · ")}</small>
+        </div>
+      </div>
+    ))}
+
     <button className="feedback-banner" onClick={onFeedback}><span className="spark">✦</span><div><strong>내 문장을 확인해볼까요?</strong><p>스크립트와 자연스러운 표현이 준비됐어요</p></div><b>→</b></button>
 
-    <div className={`recorder ${recording ? "is-recording" : ""}`}>
-      {recording ? <><span className="record-time">● 00:{String(seconds).padStart(2, "0")}</span><p>말하고 있어요…</p></> : <p>눌러서 음성 메시지를 녹음하세요</p>}
-      <button className="record-button" onClick={onRecord} aria-label={recording ? "녹음 완료" : "녹음 시작"}>{recording ? <span className="stop" /> : <span className="mic">●</span>}</button>
-      <small>{recording ? "완료하려면 다시 눌러주세요" : "마이크 버튼을 누르면 녹음이 시작돼요"}</small>
-    </div>
+    <Recorder
+      state={recorder.state}
+      micStatus={recorder.micStatus}
+      elapsedMs={recorder.elapsedMs}
+      stopReason={recorder.stopReason}
+      sendable={recorder.sendable}
+      isPreviewPlaying={isPreviewPlaying}
+      onStart={recorder.start}
+      onStop={recorder.stop}
+      onPreview={handlePreview}
+      onRetake={handleRetake}
+      onCancel={handleCancel}
+      onSend={recorder.send}
+    />
   </section>;
 }
 
