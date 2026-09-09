@@ -1,29 +1,54 @@
 <!--
 Sync Impact Report
-- Version change: (none, template scaffold) → 1.0.0
-- Modified principles: none (initial ratification)
-- Added sections:
-  - Core Principles: I. 흐름 검증 우선, II. Mock 경계 명시, III. 모바일 우선·접근성,
-    IV. 최소 의존성, V. 상태 전이 완결성
-  - 기술 제약 (Technology Constraints)
-  - 개발 워크플로 (Development Workflow)
-  - Governance
-- Removed sections: all `[PLACEHOLDER]` template slots
+- Version change: 1.0.0 → 1.1.0
+- Modified principles:
+  - "I. 흐름 검증 우선 (Flow-Validation First)"
+    → "I. 도메인 경계와 흐름 검증 (Domain Boundaries & Flow Validation)"
+    - `docs/domain-model.md` 를 제품 최상위 설계로 참조
+    - 기능 명세가 소속 서브도메인과 분류(Core/Supporting/Generic)를 밝히도록 MUST 추가
+    - 유비쿼터스 언어 용어집 준수를 MUST 추가
+    - "모든 작업"의 범위를 "모든 기능 작업(`specs/NNN-*` 단위)"으로 명확화
+      (analyze 지적 D1 해소 — task 단위인지 기능 단위인지 모호했음)
+- Unchanged principles: II. Mock 경계 명시, III. 모바일 우선·접근성, IV. 최소 의존성,
+  V. 상태 전이 완결성
+- Modified sections:
+  - Governance: 설계 문서 우선순위에 `docs/domain-model.md` 추가
+  - Governance 준수 검토: 서브도메인 명시 항목 추가
+- Unchanged sections: 기술 제약, 개발 워크플로
+- Added sections: none
+- Removed sections: none
+- Bump rationale: MINOR — 기존 원칙을 제거하거나 재정의하지 않고 지침을 실질적으로
+  확장했다. 새 MUST 두 개가 추가되므로 PATCH 가 아니다.
 - Follow-up TODOs: none
+- 이전 이력: 1.0.0 (2026-09-09) 최초 제정 — 원칙 5개, 기술 제약, 개발 워크플로,
+  Governance 신설
 -->
 
 # Talklog Constitution
 
 ## Core Principles
 
-### I. 흐름 검증 우선 (Flow-Validation First)
+### I. 도메인 경계와 흐름 검증 (Domain Boundaries & Flow Validation)
 
-모든 작업은 `draft.md` §4의 핵심 사용자 흐름 14단계 중 어느 단계를 검증하는지 명시해야
-한다. 흐름 검증에 기여하지 않는 기능은 범위에서 제외한다. 기능의 "완성도"보다 사용자가
-설명 없이 다음 행동을 선택할 수 있는지가 완료 판단 기준이다.
+제품 최상위 설계는 `docs/domain-model.md`이며, 모든 기능 작업은 그 지도 안에 자리를
+가져야 한다.
 
-근거: 이 프로젝트는 프로덕션 서비스가 아니라 흐름 검증용 프로토타입이며, 검증 목적을
-잃은 기능 추가는 흐름을 흐리게 만든다.
+- 모든 기능 명세(`specs/NNN-*/spec.md`)는 소속 서브도메인과 그 분류(Core / Supporting /
+  Generic)를 밝혀야 한다 (MUST).
+- 모든 기능 명세와 코드는 `docs/domain-model.md` §4의 유비쿼터스 언어 용어집을 따라야
+  한다 (MUST). 용어집의 "쓰지 않는 말"을 문서·코드 식별자·화면 문구에 사용해서는 안
+  된다 (MUST NOT). 새 개념이 필요하면 용어집을 먼저 개정한다.
+- 모든 기능 작업은 `draft.md` §4의 핵심 사용자 흐름 14단계 중 어느 단계를 검증하는지
+  명시해야 한다 (MUST). 여기서 "기능 작업"은 하나의 `specs/NNN-*` 단위를 뜻하며 개별
+  task 를 뜻하지 않는다.
+- 흐름 검증에 기여하지 않는 기능은 범위에서 제외한다.
+- 기능의 "완성도"보다 사용자가 설명 없이 다음 행동을 선택할 수 있는지가 완료 판단
+  기준이다.
+
+근거: 이 프로젝트는 프로덕션 서비스가 아니라 흐름 검증용 프로토타입이다. 검증 목적을
+잃은 기능 추가는 흐름을 흐리게 만들고, 같은 개념을 서로 다른 말로 부르면 명세와 코드가
+조용히 갈라진다. 도메인 지도는 기능 명세가 답하는 "무엇을 만드는가" 이전에 "왜 그것이
+먼저인가"를 답한다.
 
 ### II. Mock 경계 명시 (Explicit Mock Boundaries)
 
@@ -101,8 +126,13 @@ Mock 데이터·미구현 기능은 코드와 문서 양쪽에서 식별 가능�
 
 ## Governance
 
-이 문서는 프로젝트의 다른 관행보다 우선한다. `README.md`·`draft.md`와 충돌하는 경우
-이 문서를 따르고, 충돌 사실을 개정 안건으로 남긴다.
+이 문서는 프로젝트의 다른 관행보다 우선한다. 설계 문서의 우선순위는
+
+1. `.specify/memory/constitution.md` (이 문서)
+2. `docs/domain-model.md`
+3. `README.md` · `draft.md`
+
+순이며, 충돌하는 경우 위쪽을 따르고 충돌 사실을 개정 안건으로 남긴다.
 
 개정 절차:
 
@@ -119,8 +149,9 @@ Mock 데이터·미구현 기능은 코드와 문서 양쪽에서 식별 가능�
 
 준수 검토:
 
+- 모든 `spec.md`는 소속 서브도메인과 분류를 명시해야 한다 (원칙 I).
 - 모든 `plan.md`는 Constitution Check 항목을 통과해야 한다.
 - 원칙을 벗어나는 복잡도는 `plan.md`에 정당화를 기록해야 하며, 정당화 없는 위반은
   구현 전에 해소한다.
 
-**Version**: 1.0.0 | **Ratified**: 2026-09-09 | **Last Amended**: 2026-09-09
+**Version**: 1.1.0 | **Ratified**: 2026-09-09 | **Last Amended**: 2026-09-09
