@@ -3,6 +3,20 @@
 import { formatDuration } from "../lib/audio";
 import type { MicrophoneStatus, RecordingState, StopReason } from "../lib/types";
 
+/**
+ * blocked 상태의 문구 (contracts/recorder-ui.md, FR-019).
+ * 네 경우를 같은 문구로 합치면 FR-019 위반이다 — 사용자가 무엇을 해야 할지 달라진다.
+ */
+const BLOCKED_MESSAGES: Record<string, string> = {
+  denied:
+    "마이크 사용이 차단돼 있어요. 브라우저 주소창의 자물쇠 아이콘에서 마이크를 허용해주세요.",
+  "no-device": "마이크를 찾을 수 없어요. 마이크가 연결돼 있는지 확인해주세요.",
+  unsupported:
+    "이 브라우저에서는 음성 녹음을 지원하지 않아요. 다른 기능은 그대로 사용할 수 있어요.",
+  error:
+    "녹음을 시작할 수 없었어요. 다른 앱이 마이크를 쓰고 있는지 확인하고 다시 시도해주세요.",
+};
+
 type RecorderProps = {
   state: RecordingState;
   micStatus: MicrophoneStatus;
@@ -37,13 +51,10 @@ export default function Recorder({
   onSend,
 }: RecorderProps) {
   if (state === "blocked") {
-    // TODO(T023 · T024, Phase 5): micStatus 4가지에 서로 다른 문구와 재시도 규칙을 적용한다.
-    // 현재는 화면이 비지 않게 하는 최소 안내만 제공한다 (원칙 V).
     return (
       <div className="recorder recorder-blocked">
-        <p role="status">
-          녹음을 시작할 수 없었어요. 마이크 사용을 허용했는지 확인하고 다시 시도해주세요.
-        </p>
+        <p role="status">{BLOCKED_MESSAGES[micStatus] ?? BLOCKED_MESSAGES.error}</p>
+        {/* unsupported 에서는 다시 시도를 제공하지 않는다 — 재시도해도 결과가 같다. */}
         {micStatus !== "unsupported" && (
           <button className="recorder-retry" onClick={onStart}>
             다시 시도
@@ -77,9 +88,12 @@ export default function Recorder({
 
         <div className="recorder-actions">
           <button onClick={onPreview} aria-pressed={isPreviewPlaying}>
-            {isPreviewPlaying ? "❙❙ 멈추기" : "▶ 들어보기"}
+            <span aria-hidden="true">{isPreviewPlaying ? "❙❙" : "▶"}</span>
+            {isPreviewPlaying ? " 멈추기" : " 들어보기"}
           </button>
-          <button onClick={onRetake}>↻ 다시 녹음</button>
+          <button onClick={onRetake}>
+            <span aria-hidden="true">↻</span> 다시 녹음
+          </button>
           <button onClick={onCancel}>취소</button>
           <button
             className="send-button"
@@ -99,7 +113,11 @@ export default function Recorder({
 
   return (
     <div className={`recorder ${isRecording ? "is-recording" : ""}`}>
-      {isRecording && <span className="record-time">● {formatDuration(elapsedMs)}</span>}
+      {isRecording && (
+        <span className="record-time">
+          <span aria-hidden="true">●</span> {formatDuration(elapsedMs)}
+        </span>
+      )}
       {/* 1초마다 바뀌는 시간에는 aria-live 를 걸지 않는다 — 상태 문구에만 건다. */}
       <p aria-live="polite">
         {isRequesting
@@ -115,7 +133,13 @@ export default function Recorder({
         aria-busy={isRequesting}
         aria-label={isRecording ? "녹음 완료" : "녹음 시작"}
       >
-        {isRecording ? <span className="stop" /> : <span className="mic">●</span>}
+        {isRecording ? (
+          <span className="stop" aria-hidden="true" />
+        ) : (
+          <span className="mic" aria-hidden="true">
+            ●
+          </span>
+        )}
       </button>
       <small>
         {isRecording

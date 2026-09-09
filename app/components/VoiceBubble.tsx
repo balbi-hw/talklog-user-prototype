@@ -42,7 +42,7 @@ export default function VoiceBubble({ message, isActive, progress, onToggle }: V
       }`}
     >
       <button className="play-button" onClick={onToggle} disabled={!playable} aria-label={label}>
-        {isActive ? "❙❙" : "▶"}
+        <span aria-hidden="true">{isActive ? "❙❙" : "▶"}</span>
       </button>
       <div className="wave-track">
         <Wave light={isMine} />

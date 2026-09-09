@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Recorder from "./components/Recorder";
 import VoiceBubble from "./components/VoiceBubble";
 import { useVoicePlayback, PREVIEW_ID } from "./hooks/useVoicePlayback";
@@ -28,16 +28,47 @@ const INITIAL_MESSAGES: VoiceMessage[] = [
 const timeLabel = () =>
   new Date().toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" });
 
+/** FR-022 — 아직 보내지 않은 녹음이 있는지와 그것을 버리는 수단. */
+type PendingRecording = { hasPending: boolean; discard: () => void };
+
 export default function TalklogApp() {
   const [screen, setScreen] = useState<Screen>("home");
   const [saved, setSaved] = useState(false);
   const [answer, setAnswer] = useState<"know" | "again" | null>(null);
   // 화면을 옮겨도 전송한 메시지가 유지되도록 대화 상태는 셸에서 소유한다.
   const [messages, setMessages] = useState<VoiceMessage[]>(INITIAL_MESSAGES);
+  // 이동이 막힌 목적지. null 이 아니면 확인을 기다리는 중이다.
+  const [blockedNav, setBlockedNav] = useState<Screen | null>(null);
 
-  const go = (next: Screen) => {
+  const pendingRef = useRef<PendingRecording>({ hasPending: false, discard: () => {} });
+  const reportPending = useCallback((pending: PendingRecording) => {
+    pendingRef.current = pending;
+  }, []);
+
+  const move = (next: Screen) => {
     setScreen(next);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  /**
+   * FR-022: 녹음 중이거나 전송 전 녹음이 있으면 조용히 사라지게 두지 않고,
+   * 버릴지 유지할지 사용자가 고르게 한다 (전이 T7 · T14).
+   */
+  const go = (next: Screen) => {
+    if (screen === "room" && next !== "room" && pendingRef.current.hasPending) {
+      setBlockedNav(next);
+      return;
+    }
+    move(next);
+  };
+
+  const keepRecording = () => setBlockedNav(null);
+
+  const discardAndLeave = () => {
+    pendingRef.current.discard();
+    const next = blockedNav;
+    setBlockedNav(null);
+    if (next) move(next);
   };
 
   const addRecordedMessage = useCallback((recording: SentRecording) => {
@@ -67,7 +98,12 @@ export default function TalklogApp() {
 
         {screen === "home" && <Home onOpenRoom={() => go("room")} onReview={() => go("review")} />}
         {screen === "room" && (
-          <Room messages={messages} onSendRecording={addRecordedMessage} onFeedback={() => go("feedback")} />
+          <Room
+            messages={messages}
+            onSendRecording={addRecordedMessage}
+            onFeedback={() => go("feedback")}
+            onPendingChange={reportPending}
+          />
         )}
         {screen === "feedback" && (
           <Feedback saved={saved} onBack={() => go("room")} onSave={() => setSaved(true)} onCards={() => go("cards")} />
@@ -81,6 +117,31 @@ export default function TalklogApp() {
           <NavButton active={screen === "cards" || screen === "review"} icon="cards" label="카드" onClick={() => go("cards")} />
           <NavButton active={false} icon="user" label="마이" onClick={() => {}} />
         </nav>
+
+        {blockedNav && (
+          <div
+            className="leave-confirm"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="leave-title"
+            onKeyDown={(event) => {
+              if (event.key === "Escape") keepRecording();
+            }}
+          >
+            <div className="leave-card">
+              <strong id="leave-title">아직 보내지 않은 녹음이 있어요</strong>
+              <p>화면을 옮기면 이 녹음은 사라져요.</p>
+              <div className="leave-actions">
+                <button autoFocus onClick={keepRecording}>
+                  녹음 계속하기
+                </button>
+                <button className="leave-discard" onClick={discardAndLeave}>
+                  버리고 이동
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </main>
   );
@@ -121,10 +182,12 @@ function Room({
   messages,
   onSendRecording,
   onFeedback,
+  onPendingChange,
 }: {
   messages: VoiceMessage[];
   onSendRecording: (recording: SentRecording) => void;
   onFeedback: () => void;
+  onPendingChange: (pending: PendingRecording) => void;
 }) {
   const [showScript, setShowScript] = useState(false);
   const [showTranslation, setShowTranslation] = useState(false);
@@ -133,6 +196,11 @@ function Room({
   const recorder = useVoiceRecorder({ onSend: onSendRecording });
 
   const isPreviewPlaying = playback.activeId === PREVIEW_ID;
+
+  // FR-022: 셸이 화면 이동을 막을 수 있도록 전송 전 녹음 상태를 위로 알린다.
+  useEffect(() => {
+    onPendingChange({ hasPending: recorder.hasPending, discard: recorder.discard });
+  }, [recorder.hasPending, recorder.discard, onPendingChange]);
 
   const handlePreview = () => {
     if (recorder.previewUrl) playback.toggle(PREVIEW_ID, recorder.previewUrl, recorder.elapsedMs);

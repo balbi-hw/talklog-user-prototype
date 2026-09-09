@@ -114,10 +114,10 @@ S4-3(두 소리 겹치지 않음)과 S4-6(Mock 메시지 버튼 비활성)
 
 ### Implementation for User Story 3
 
-- [ ] T023 [US3] `app/components/Recorder.tsx` — `blocked` 상태 렌더링. contracts/recorder-ui.md의 문구 분기표대로 `micStatus` 4가지에 서로 다른 문구를 표시한다: `denied`는 "마이크 사용이 차단돼 있어요. 브라우저 주소창의 자물쇠 아이콘에서 마이크를 허용해주세요.", `no-device`는 "마이크를 찾을 수 없어요. 마이크가 연결돼 있는지 확인해주세요.", `unsupported`는 "이 브라우저에서는 음성 녹음을 지원하지 않아요. 다른 기능은 그대로 사용할 수 있어요.", `error`는 "녹음을 시작할 수 없었어요. 다른 앱이 마이크를 쓰고 있는지 확인하고 다시 시도해주세요." 네 경우를 같은 문구로 합치면 FR-019 위반이다. 안내 영역에 `role="status"`를 준다
-- [ ] T024 [US3] `app/components/Recorder.tsx` — 다시 시도 버튼. `denied` · `no-device` · `error`에서는 제공하고 `unsupported`에서는 제공하지 않는다 — 재시도해도 결과가 같다 (data-model.md §3, 전이 T15, FR-020). 다시 시도는 `start()`를 호출해 `requesting`으로 전이한다
-- [ ] T025 [US3] `app/components/Recorder.tsx` — 마운트 시 `isRecordingSupported()`로 조기 판정해 `micStatus`를 `"unsupported"`, `state`를 `"blocked"`로 둔다. 이 상태에서도 대화 목록과 하단 탭은 정상 동작해야 한다 (US3-4, contracts/recorder-ui.md 조항 6)
-- [ ] T026 [US3] `app/hooks/useVoiceRecorder.ts` — 녹음 도중 오류 복구. `MediaRecorder`의 `onerror`와 트랙 `ended` 이벤트에서 진행 중인 녹음을 폐기하고 트랙을 정리한 뒤 `blocked`로 전이한다 (전이 T6, FR-021). 다시 시도로 복귀 가능한 상태여야 하며 앱이 조작 불가 상태로 빠지지 않아야 한다
+- [X] T023 [US3] `app/components/Recorder.tsx` — `blocked` 상태 렌더링. contracts/recorder-ui.md의 문구 분기표대로 `micStatus` 4가지에 서로 다른 문구를 표시한다: `denied`는 "마이크 사용이 차단돼 있어요. 브라우저 주소창의 자물쇠 아이콘에서 마이크를 허용해주세요.", `no-device`는 "마이크를 찾을 수 없어요. 마이크가 연결돼 있는지 확인해주세요.", `unsupported`는 "이 브라우저에서는 음성 녹음을 지원하지 않아요. 다른 기능은 그대로 사용할 수 있어요.", `error`는 "녹음을 시작할 수 없었어요. 다른 앱이 마이크를 쓰고 있는지 확인하고 다시 시도해주세요." 네 경우를 같은 문구로 합치면 FR-019 위반이다. 안내 영역에 `role="status"`를 준다
+- [X] T024 [US3] `app/components/Recorder.tsx` — 다시 시도 버튼. `denied` · `no-device` · `error`에서는 제공하고 `unsupported`에서는 제공하지 않는다 — 재시도해도 결과가 같다 (data-model.md §3, 전이 T15, FR-020). 다시 시도는 `start()`를 호출해 `requesting`으로 전이한다
+- [X] T025 [US3] `app/components/Recorder.tsx` — 마운트 시 `isRecordingSupported()`로 조기 판정해 `micStatus`를 `"unsupported"`, `state`를 `"blocked"`로 둔다. 이 상태에서도 대화 목록과 하단 탭은 정상 동작해야 한다 (US3-4, contracts/recorder-ui.md 조항 6)
+- [X] T026 [US3] `app/hooks/useVoiceRecorder.ts` — 녹음 도중 오류 복구. `MediaRecorder`의 `onerror`와 트랙 `ended` 이벤트에서 진행 중인 녹음을 폐기하고 트랙을 정리한 뒤 `blocked`로 전이한다 (전이 T6, FR-021). 다시 시도로 복귀 가능한 상태여야 하며 앱이 조작 불가 상태로 빠지지 않아야 한다
 - [X] T027 [US3] `app/globals.css` — 안내 배너 스타일 `.recorder-blocked`, `.recorder-retry`. 오류 계열 강조는 기존 `--coral` 변수를 사용한다 (기술 제약)
 
 **Checkpoint**: 세 User Story가 모두 독립적으로 동작한다. quickstart.md S5 통과
@@ -128,11 +128,11 @@ S4-3(두 소리 겹치지 않음)과 S4-6(Mock 메시지 버튼 비활성)
 
 **Purpose**: 여러 스토리에 걸친 요구사항과 문서 동기화
 
-- [ ] T028 `app/page.tsx` — FR-022 구현. `useVoiceRecorder`의 `hasPending`이 `true`일 때 하단 탭이나 브랜드 버튼으로 화면을 이동하려 하면 녹음이 조용히 사라지지 않게 한다. 사용자가 버릴지 유지할지 알 수 있어야 한다. 확인 후 버리는 경로는 `discard()`를 호출한다 (전이 T7 · T14, 원칙 V)
-- [ ] T029 `app/components/Recorder.tsx` + `app/components/VoiceBubble.tsx` — FR-023 점검. 신규 컨트롤 전부가 `<button>`인지, 아이콘만 있는 컨트롤에 `aria-label`이 있는지, Tab·Enter·Space만으로 녹음에서 미리 듣기, 전송까지 가능한지 확인한다. `div` + `onClick`이 남아 있으면 교체한다 (원칙 III)
-- [ ] T030 `README.md` — 문서 동기화 (SC-007, 원칙 II). "현재 구현 범위"의 미구현 목록에서 "음성 파일 녹음·재생·업로드"를 "음성 파일 업로드"로 좁힌다. "주요 기능"에 실제 녹음·재생과 전송 전 확인 단계를 반영한다. "프로젝트 구조" 트리에 `app/lib/`, `app/hooks/`, `app/components/`를 추가한다. "향후 확장 방향" 2번("실제 음성 녹음 및 재생 기능 연결")을 제거한다
-- [ ] T031 `package.json`의 `npm run build` 실행 — TypeScript 오류 0개로 통과해야 한다. `any` 사용이 남았다면 주석으로 정당화하거나 타입을 좁힌다 (Constitution 품질 게이트, 기술 제약)
-- [ ] T032 [quickstart.md](./quickstart.md) S1~S7 전체 수동 검증 — `http://localhost:3000`에서 실행한다 (LAN IP로는 `getUserMedia`가 동작하지 않는다). S3은 `maxDurationMs`를 5000으로 낮춰 먼저 확인하고 60000으로 되돌린 뒤 다시 확인한다. 하나라도 실패하면 완료로 보고하지 않는다
+- [X] T028 `app/page.tsx` — FR-022 구현. `useVoiceRecorder`의 `hasPending`이 `true`일 때 하단 탭이나 브랜드 버튼으로 화면을 이동하려 하면 녹음이 조용히 사라지지 않게 한다. 사용자가 버릴지 유지할지 알 수 있어야 한다. 확인 후 버리는 경로는 `discard()`를 호출한다 (전이 T7 · T14, 원칙 V)
+- [X] T029 `app/components/Recorder.tsx` + `app/components/VoiceBubble.tsx` — FR-023 점검. 신규 컨트롤 전부가 `<button>`인지, 아이콘만 있는 컨트롤에 `aria-label`이 있는지, Tab·Enter·Space만으로 녹음에서 미리 듣기, 전송까지 가능한지 확인한다. `div` + `onClick`이 남아 있으면 교체한다 (원칙 III)
+- [X] T030 `README.md` — 문서 동기화 (SC-007, 원칙 II). "현재 구현 범위"의 미구현 목록에서 "음성 파일 녹음·재생·업로드"를 "음성 파일 업로드"로 좁힌다. "주요 기능"에 실제 녹음·재생과 전송 전 확인 단계를 반영한다. "프로젝트 구조" 트리에 `app/lib/`, `app/hooks/`, `app/components/`를 추가한다. "향후 확장 방향" 2번("실제 음성 녹음 및 재생 기능 연결")을 제거한다
+- [X] T031 `package.json`의 `npm run build` 실행 — TypeScript 오류 0개로 통과해야 한다. `any` 사용이 남았다면 주석으로 정당화하거나 타입을 좁힌다 (Constitution 품질 게이트, 기술 제약)
+- [X] T032 [quickstart.md](./quickstart.md) S1~S7 전체 수동 검증 — `http://localhost:3000`에서 실행한다 (LAN IP로는 `getUserMedia`가 동작하지 않는다). S3은 `maxDurationMs`를 5000으로 낮춰 먼저 확인하고 60000으로 되돌린 뒤 다시 확인한다. 하나라도 실패하면 완료로 보고하지 않는다
 
 ---
 
@@ -262,3 +262,43 @@ US1의 수용 시나리오에 "전송한 메시지를 다시 들을 수 있다"�
   - **미검증**: S3(60초 상한 — 구현됐으나 실시간 대기 필요), S5(권한 분기 — T023~T026
     미구현), S6-1·2(녹음 중 화면 이동 — T028 미구현), S7(README — T030 미구현)
   - 결론: US1·US2는 수용 기준을 만족한다. US3와 Polish는 구현 후 재검증 대상
+
+---
+
+## 실행 기록 2회차 (2026-09-09)
+
+`/speckit-implement` — Phase 5·6 (T023~T032).
+
+**완료**: T023~T032 — 32개 작업 전부 완료
+
+### 구현 내용
+
+- T023·T024 `Recorder.tsx` — `BLOCKED_MESSAGES` 로 `micStatus` 4분기 문구 분리.
+  `unsupported` 에서는 다시 시도를 렌더링하지 않는다 (재시도해도 결과가 같다)
+- T025 — 미지원 조기 판정을 `Recorder.tsx` 가 아니라 `useVoiceRecorder` 의
+  `useEffect` 에 넣었다. `micStatus` 의 소유자가 훅이고, 서버 렌더에는
+  `MediaRecorder` 가 없어 렌더 중 판정하면 hydration 이 어긋난다
+- T026 `useVoiceRecorder.ts` — `failRecording()` 추가. `recorder.onerror` 와 트랙의
+  `ended` 이벤트를 연결했다. `track.stop()` 은 표준상 `ended` 를 발생시키지 않으므로
+  정상 종료 경로와 섞이지 않고, `recorderRef.current` null 검사로 이중 방어한다
+- T028 `page.tsx` — `hasPending` 을 셸로 올려 `go()` 가 이동을 가로채고 확인
+  대화상자를 띄운다. Room 이 언마운트되면 상태가 낡지만 `screen === "room"` 조건
+  때문에 다른 화면에서는 검사하지 않는다
+- T029 — 글리프(`▶`, `❙❙`, `●`, `↻`)를 `aria-hidden` span 으로 감쌌다. `aria-label`
+  과 글리프가 함께 읽히던 문제
+- T030 `README.md` — 8곳 갱신. 미구현 목록에서 녹음·재생 제거, `specs/`·`.specify/`
+  구조 추가, "모든 콘텐츠는 Mock" 문장을 실제 동작 범위에 맞게 수정 (원칙 II)
+- T031 `npm run build` 통과 (TS 오류 0, `/` 7.17 kB)
+
+### T032 수동 검증 결과 (2026-09-09)
+
+quickstart.md S1~S7 **전부 통과**. 세부:
+- S3 60초 자동 종료와 "60초까지만 녹음돼요" 안내
+- S5 권한 4분기 문구가 서로 구분됨, 다시 시도 복귀, 녹음 중 오류 복구와 트랙 정리
+- S6 화면 이동 확인창(계속하기 / 버리고 이동 / Esc), 전송 후에는 확인 없이 이동
+- S7 README 미구현 목록에서 녹음·재생 제거 확인
+- S1·S2·S4 회귀 없음
+
+기능 001-voice-recording 의 수용 기준을 모두 만족한다. 남은 것은 SC-006(실제 사용자
+테스트에서 참가자가 설명 없이 녹음 방법을 찾아내는지)이며, 이는 참가자 모집이 필요한
+프로젝트 활동으로 코드 작업이 아니다.

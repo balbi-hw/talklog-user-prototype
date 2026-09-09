@@ -86,6 +86,26 @@ export function useVoiceRecorder({
     setPreviewUrl(null);
   }, []);
 
+  /**
+   * T6 — 녹음 도중 오류. 진행 중인 녹음을 폐기하고 장치를 정리한 뒤 blocked 로 전이한다.
+   * 다시 시도로 복귀할 수 있어야 하며 앱이 조작 불가 상태로 빠지지 않아야 한다 (FR-021).
+   */
+  const failRecording = useCallback(() => {
+    const recorder = recorderRef.current;
+    // releaseDevice 가 이미 돌았으면 정상 종료 경로다 — 오류로 처리하지 않는다.
+    if (!recorder) return;
+    recorder.onstop = null;
+    if (recorder.state !== "inactive") recorder.stop();
+    releaseDevice();
+    revokePreview();
+    chunksRef.current = [];
+    setElapsedMs(0);
+    setBlobSize(0);
+    setStopReason(null);
+    setMicStatus("error");
+    setState("blocked");
+  }, [releaseDevice, revokePreview]);
+
   /** T7 · T10 · T13 — 진행 중인 녹음과 전송 전 녹음을 모두 버리고 idle 로 돌아간다. */
   const reset = useCallback(() => {
     const recorder = recorderRef.current;
@@ -134,6 +154,11 @@ export function useVoiceRecorder({
         if (event.data.size > 0) chunksRef.current.push(event.data);
       };
 
+      // FR-021: 녹음 도중 오류와 장치 연결 해제. track.stop() 은 ended 를 발생시키지
+      // 않으므로(표준) 정상 종료 경로와 섞이지 않는다.
+      recorder.onerror = failRecording;
+      stream.getTracks().forEach((track) => track.addEventListener("ended", failRecording));
+
       // T4 / T5 — 사용자 종료와 60초 자동 종료가 같은 경로로 review 에 도달한다.
       recorder.onstop = () => {
         const durationMs = performance.now() - startedAtRef.current;
@@ -172,7 +197,7 @@ export function useVoiceRecorder({
       setMicStatus(classifyMicError(error));
       setState("blocked");
     }
-  }, [micStatus, maxDurationMs, clearTimer, releaseDevice, revokePreview]);
+  }, [micStatus, maxDurationMs, clearTimer, releaseDevice, revokePreview, failRecording]);
 
   /** T4 */
   const stop = useCallback(() => {
@@ -209,6 +234,17 @@ export function useVoiceRecorder({
     reset();
     void start();
   }, [reset, start]);
+
+  /**
+   * 미지원 환경 조기 판정 (T025). 서버 렌더링에는 MediaRecorder 가 없으므로 렌더 중이
+   * 아니라 마운트 후에 판정해야 hydration 불일치가 생기지 않는다.
+   */
+  useEffect(() => {
+    if (!isRecordingSupported()) {
+      setMicStatus("unsupported");
+      setState("blocked");
+    }
+  }, []);
 
   // T8 — 언마운트 시 장치·타이머·URL 을 모두 정리한다 (R-005).
   useEffect(() => {
