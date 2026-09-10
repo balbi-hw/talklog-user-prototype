@@ -1,13 +1,40 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import ExpressionList from "./components/ExpressionList";
+import ExpressionSheet from "./components/ExpressionSheet";
 import Recorder from "./components/Recorder";
 import VoiceBubble from "./components/VoiceBubble";
+import { useExpressions, type UseExpressionsResult } from "./hooks/useExpressions";
+import { useTranscriptSelection } from "./hooks/useTranscriptSelection";
 import { useVoicePlayback, PREVIEW_ID } from "./hooks/useVoicePlayback";
 import { useVoiceRecorder, type SentRecording } from "./hooks/useVoiceRecorder";
-import type { VoiceMessage } from "./lib/types";
+import { SAVE_FAILURE_MESSAGE } from "./lib/expressions";
+import type { ExpressionDraft, SaveFailure, VoiceMessage } from "./lib/types";
 
 type Screen = "home" | "room" | "feedback" | "cards" | "review";
+
+/** 학습방은 여전히 하나뿐이다. 표현의 출처로 저장한다 (FR-011). */
+const ROOM_NAME = "유키와 일본어 대화";
+
+/**
+ * 스크립트가 붙은 예시 상대 메시지의 전체 텍스트. 표현의 예문으로 저장한다 (FR-010).
+ *
+ * 실제로 녹음한 내 음성에는 스크립트가 없다 — STT 가 미구현이므로 표현을 고를 수 있는
+ * 것은 이 예시 스크립트뿐이다 (spec.md Assumptions).
+ */
+const PARTNER_TRANSCRIPT = "週末は何をして過ごしたの？";
+
+/**
+ * Feedback 화면이 저장하는 표현. AI 문장 교정이 미구현이라 내용은 Mock 이지만
+ * **저장 동작은 실제**여야 한다 (FR-024, data-model.md E13).
+ */
+const FEEDBACK_EXPRESSION: ExpressionDraft = {
+  term: "映画館で映画を見る",
+  meaning: "영화관에서 영화를 보다",
+  example: "週末は映画館で映画を見たよ。",
+  sourceRoom: ROOM_NAME,
+};
 
 const Icon = ({ name }: { name: "home" | "chat" | "cards" | "user" }) => {
   const paths = {
@@ -31,12 +58,25 @@ const timeLabel = () =>
 /** FR-022 — 아직 보내지 않은 녹음이 있는지와 그것을 버리는 수단. */
 type PendingRecording = { hasPending: boolean; discard: () => void };
 
+/** 표현을 저장하는 화면(`Room` · `Feedback`)이 셸에서 받는 것. 저장 경로는 하나다 (E13). */
+type ExpressionSaving = {
+  storageStatus: UseExpressionsResult["status"];
+  findDuplicate: UseExpressionsResult["findDuplicate"];
+  onSaveExpression: UseExpressionsResult["save"];
+};
+
 export default function TalklogApp() {
   const [screen, setScreen] = useState<Screen>("home");
-  const [saved, setSaved] = useState(false);
   const [answer, setAnswer] = useState<"know" | "again" | null>(null);
   // 화면을 옮겨도 전송한 메시지가 유지되도록 대화 상태는 셸에서 소유한다.
   const [messages, setMessages] = useState<VoiceMessage[]>(INITIAL_MESSAGES);
+
+  /**
+   * 표현 모음의 단일 소유자 (contracts/use-expressions.md). 저장은 `Room`·`Feedback`
+   * 에서 일어나고 조회는 `Cards` 에서 일어나므로 세 화면의 공통 조상이 가져야 한다 —
+   * 화면이 조건부 렌더링이라 `Room` 이 언마운트되면 화면 안에 둔 상태는 사라진다.
+   */
+  const expressions = useExpressions();
   // 이동이 막힌 목적지. null 이 아니면 확인을 기다리는 중이다.
   const [blockedNav, setBlockedNav] = useState<Screen | null>(null);
 
@@ -103,12 +143,28 @@ export default function TalklogApp() {
             onSendRecording={addRecordedMessage}
             onFeedback={() => go("feedback")}
             onPendingChange={reportPending}
+            storageStatus={expressions.status}
+            findDuplicate={expressions.findDuplicate}
+            onSaveExpression={expressions.save}
           />
         )}
         {screen === "feedback" && (
-          <Feedback saved={saved} onBack={() => go("room")} onSave={() => setSaved(true)} onCards={() => go("cards")} />
+          <Feedback
+            onBack={() => go("room")}
+            onCards={() => go("cards")}
+            storageStatus={expressions.status}
+            findDuplicate={expressions.findDuplicate}
+            onSaveExpression={expressions.save}
+          />
         )}
-        {screen === "cards" && <Cards onReview={() => go("review")} />}
+        {screen === "cards" && (
+          <Cards
+            status={expressions.status}
+            expressions={expressions.expressions}
+            count={expressions.count}
+            onRemove={expressions.remove}
+          />
+        )}
         {screen === "review" && <Review answer={answer} onAnswer={setAnswer} onDone={() => go("home")} />}
 
         <nav className="bottom-nav" aria-label="주요 메뉴">
@@ -183,17 +239,85 @@ function Room({
   onSendRecording,
   onFeedback,
   onPendingChange,
+  storageStatus,
+  findDuplicate,
+  onSaveExpression,
 }: {
   messages: VoiceMessage[];
   onSendRecording: (recording: SentRecording) => void;
   onFeedback: () => void;
   onPendingChange: (pending: PendingRecording) => void;
-}) {
+} & ExpressionSaving) {
   const [showScript, setShowScript] = useState(false);
   const [showTranslation, setShowTranslation] = useState(false);
 
   const playback = useVoicePlayback();
   const recorder = useVoiceRecorder({ onSend: onSendRecording });
+
+  /**
+   * 스크립트가 붙은 예시 상대 메시지는 하나뿐이므로 ref 도 하나다
+   * (spec.md Assumptions — 실제 녹음에는 STT 가 없다).
+   */
+  const transcriptRef = useRef<HTMLParagraphElement>(null);
+
+  // 초안은 동시에 최대 1개다 (data-model.md §2). 저장 수단이 스크립트 블록에 붙어
+  // 있으므로 초안도 이 화면이 소유한다.
+  const [draft, setDraft] = useState<ExpressionDraft | null>(null);
+  const [saveError, setSaveError] = useState<SaveFailure | null>(null);
+  const [savedTerm, setSavedTerm] = useState<string | null>(null);
+
+  const { selection, clear } = useTranscriptSelection({
+    transcriptRef,
+    example: PARTNER_TRANSCRIPT,
+    sourceRoom: ROOM_NAME,
+    enabled: showScript,
+  });
+
+  /** 스크립트를 닫으면 표현을 고를 수단 자체가 사라진다 (FR-006). 초안도 함께 버린다. */
+  const toggleScript = () => {
+    const next = !showScript;
+    setShowScript(next);
+    if (!next) {
+      setDraft(null);
+      setSaveError(null);
+      setSavedTerm(null);
+    }
+  };
+
+  const startDraft = () => {
+    if (!selection) return;
+    setDraft({
+      term: selection.text,
+      meaning: "",
+      example: selection.example,
+      sourceRoom: selection.sourceRoom,
+    });
+    setSaveError(null);
+    setSavedTerm(null);
+  };
+
+  /** 취소하면 아무것도 저장되지 않는다 (FR-013, E9). */
+  const cancelDraft = () => {
+    setDraft(null);
+    setSaveError(null);
+    clear();
+  };
+
+  const submitDraft = () => {
+    if (!draft) return;
+    const result = onSaveExpression(draft);
+    if (!result.ok) {
+      // 실패하면 초안을 유지한다 — 적어둔 뜻을 잃게 해서는 안 된다 (FR-015, 원칙 II).
+      setSaveError(result.reason);
+      return;
+    }
+    setSavedTerm(result.saved.term);
+    setDraft(null);
+    setSaveError(null);
+    clear();
+  };
+
+  const duplicateOf = draft ? findDuplicate(draft.term) : null;
 
   const isPreviewPlaying = playback.activeId === PREVIEW_ID;
 
@@ -229,7 +353,7 @@ function Room({
   };
 
   return <section className="screen room-screen">
-    <div className="room-heading"><div className="friend-avatar">유</div><div><h1>유키와 일본어 대화</h1><p><span /> 일본어 학습 중</p></div><button aria-label="더 보기">•••</button></div>
+    <div className="room-heading"><div className="friend-avatar">유</div><div><h1>{ROOM_NAME}</h1><p><span /> 일본어 학습 중</p></div><button aria-label="더 보기">•••</button></div>
     <div className="day-divider"><span>오늘</span></div>
 
     {messages.map((message) => message.sender === "partner" ? (
@@ -240,10 +364,44 @@ function Room({
           {/* 스크립트·번역은 STT 가 붙은 예시 메시지에만 있다. 실제 녹음의 STT 는 범위 밖이다. */}
           {message.source === "mock" && <>
             <div className="detail-toggles">
-              <button className={showScript ? "active" : ""} onClick={() => setShowScript((visible) => !visible)} aria-expanded={showScript} aria-controls="partner-script">스크립트 <span>{showScript ? "⌃" : "⌄"}</span></button>
+              <button className={showScript ? "active" : ""} onClick={toggleScript} aria-expanded={showScript} aria-controls="partner-script">스크립트 <span>{showScript ? "⌃" : "⌄"}</span></button>
               <button className={showTranslation ? "active" : ""} onClick={() => setShowTranslation((visible) => !visible)} aria-expanded={showTranslation} aria-controls="partner-translation">번역 <span>{showTranslation ? "⌃" : "⌄"}</span></button>
             </div>
-            {showScript && <div id="partner-script" className="message-details"><span>스크립트</span><p className="transcript">週末は何をして過ごしたの？</p></div>}
+            {showScript && <>
+              <div id="partner-script" className="message-details">
+                <span>스크립트</span>
+                {/* tabIndex={0} 이 FR-028 의 핵심이다 — 포커스 가능한 텍스트 요소에서는
+                    Shift+방향키로 캐럿 선택이 되고 그 선택이 getSelection() 에 똑같이
+                    나타난다. 키보드 전용 선택 UI 를 따로 만들지 않는다 (R-002). */}
+                <p
+                  ref={transcriptRef}
+                  className="transcript"
+                  tabIndex={0}
+                  aria-label="스크립트. 배우고 싶은 부분을 골라 표현으로 저장할 수 있어요"
+                >
+                  {PARTNER_TRANSCRIPT}
+                </p>
+              </div>
+              <ExpressionSheet
+                selection={selection}
+                draft={draft}
+                duplicateOf={duplicateOf}
+                storageStatus={storageStatus}
+                saveError={saveError}
+                savedTerm={savedTerm}
+                onStart={startDraft}
+                onTermChange={(term) => {
+                  setDraft((current) => (current ? { ...current, term } : current));
+                  setSaveError(null);
+                }}
+                onMeaningChange={(meaning) => {
+                  setDraft((current) => (current ? { ...current, meaning } : current));
+                  setSaveError(null);
+                }}
+                onSave={submitDraft}
+                onCancel={cancelDraft}
+              />
+            </>}
             {showTranslation && <div id="partner-translation" className="message-details translation-detail"><span>번역</span><p>주말에는 무엇을 하며 보냈어?</p></div>}
           </>}
           <small>{message.sentAtLabel}</small>
@@ -277,31 +435,107 @@ function Room({
   </section>;
 }
 
-function Feedback({ saved, onBack, onSave, onCards }: { saved: boolean; onBack: () => void; onSave: () => void; onCards: () => void }) {
+function Feedback({
+  onBack,
+  onCards,
+  storageStatus,
+  findDuplicate,
+  onSaveExpression,
+}: { onBack: () => void; onCards: () => void } & ExpressionSaving) {
+  const [saveError, setSaveError] = useState<SaveFailure | null>(null);
+  const [justSaved, setJustSaved] = useState(false);
+
+  /**
+   * 저장 여부를 이 화면의 상태로 판단하지 않는다 — 표현 모음에 실제로 있는지로 판단한다.
+   * 화면을 떠났다 돌아와도, 새로고침해도 같은 답이 나온다 (FR-024, 원칙 II).
+   */
+  const alreadySaved = findDuplicate(FEEDBACK_EXPRESSION.term) !== null;
+
+  /** E13 — E5 와 같은 저장 경로를 쓴다. 중복 판정과 저장소 실패 처리도 똑같이 적용된다. */
+  const handleSave = () => {
+    const result = onSaveExpression(FEEDBACK_EXPRESSION);
+    if (!result.ok) {
+      setSaveError(result.reason);
+      return;
+    }
+    setSaveError(null);
+    setJustSaved(true);
+  };
+
+  /**
+   * 저장을 시도해 실패한 이유가 가장 우선한다. 그다음은 저장소를 아예 쓸 수 없는 상태
+   * (FR-015), 마지막이 이미 저장돼 있다는 안내다. 방금 저장한 직후에는 완료 표시가
+   * 나가므로 중복 안내를 겹쳐 보여주지 않는다.
+   */
+  const notice: SaveFailure | null =
+    saveError ??
+    (storageStatus === "unavailable"
+      ? "storage-unavailable"
+      : alreadySaved && !justSaved
+        ? "duplicate"
+        : null);
+
   return <section className="screen feedback-screen">
     <button className="back" onClick={onBack} aria-label="대화로 돌아가기">←</button>
     <div className="eyebrow">AI 피드백</div><h1>잘 전달됐어요!<br/><span>조금 더 자연스럽게</span> 다듬어볼게요.</h1>
     <div className="feedback-card original"><div className="card-label">내가 말한 문장</div><p>週末に映画館で映画を見ました。</p><button className="sound">▶ 들어보기</button></div>
     <div className="connector-line" />
     <div className="feedback-card suggestion"><div className="card-label">✦ 더 자연스러운 표현</div><p>週末は映画館で映画を見たよ。</p><button className="sound">▶ 들어보기</button><div className="why"><strong>왜 이렇게 바꿨나요?</strong><p>친구와의 편한 대화에서는 「〜ました」보다 「〜たよ」가 더 자연스러워요.</p></div></div>
-    <div className="expression"><div><span>저장할 표현</span><h2>映画館で映画を見る</h2><p>영화관에서 영화를 보다</p></div><button className={saved ? "saved" : ""} onClick={onSave}>{saved ? "✓ 저장됨" : "+ 카드에 저장"}</button></div>
-    {saved && <button className="primary-button" onClick={onCards}>저장한 카드 확인하기 →</button>}
+    <div className="expression">
+      <div>
+        <span>저장할 표현</span>
+        <h2>{FEEDBACK_EXPRESSION.term}</h2>
+        <p>{FEEDBACK_EXPRESSION.meaning}</p>
+      </div>
+      <button className={alreadySaved ? "saved" : ""} onClick={handleSave}>
+        {alreadySaved ? "✓ 저장됨" : "+ 카드에 저장"}
+      </button>
+    </div>
+    {notice && <p className="expression-notice">{SAVE_FAILURE_MESSAGE[notice]}</p>}
+    {justSaved && !saveError && <p className="expression-notice done" role="status">✓ 카드에 저장했어요</p>}
+    {alreadySaved && <button className="primary-button" onClick={onCards}>저장한 카드 확인하기 →</button>}
   </section>;
 }
 
-function Cards({ onReview }: { onReview: () => void }) {
-  return <section className="screen cards-screen"><div className="eyebrow">나의 표현</div><h1>플래시카드</h1><p className="lead">대화에서 발견한 표현을 다시 만나보세요.</p>
-    <div className="card-summary"><div><small>오늘의 복습</small><strong>8</strong><span>장 남았어요</span></div><button onClick={onReview}>복습 시작 →</button></div>
-    <div className="filter-row"><button className="active">전체 23</button><button>최근 저장</button><button>어려워요</button></div>
-    {[['映画館で映画を見る','영화관에서 영화를 보다','유키와 일본어 대화'],['久しぶりだね','오랜만이야','유키와 일본어 대화'],['楽しみにしている','기대하고 있어','하루와 일본어 대화']].map(([jp,ko,source],i)=><article className="word-card" key={jp}><div className="word-index">{String(i+1).padStart(2,'0')}</div><div><h2>{jp}</h2><p>{ko}</p><small>↳ {source}</small></div><button aria-label="음성 재생">▶</button></article>)}
+/**
+ * 카드 목록 화면. 실제로 저장한 표현만 렌더링한다.
+ *
+ * 하드코딩된 표현 3개와 `전체 23`, 동작하지 않는 필터, 표현에는 없는 음성의 재생
+ * 버튼을 모두 제거했다 (FR-025, contracts/expression-list-ui.md 조항 1·3·4).
+ */
+function Cards({
+  status,
+  expressions,
+  count,
+  onRemove,
+}: {
+  status: UseExpressionsResult["status"];
+  expressions: UseExpressionsResult["expressions"];
+  count: number;
+  onRemove: (id: string) => void;
+}) {
+  return <section className="screen cards-screen">
+    <div className="eyebrow">나의 표현</div>
+    <h1>내 표현</h1>
+    <p className="lead">대화에서 발견한 표현을 다시 만나보세요.</p>
+
+    {/* FR-026: 복습 서브도메인이 미구현이라 복습할 카드 수를 실제 값으로 바꿀 수 없다.
+        실제 값으로 바꿀 수 없는 표시는 지우고, 동작하는 것처럼 보이는 버튼도 남기지
+        않는다 (원칙 II). */}
+    <div className="review-pending">
+      <strong>복습은 아직 준비 중이에요</strong>
+      <p>저장한 표현으로 복습하는 기능은 아직 만들지 않았어요.</p>
+    </div>
+
+    <ExpressionList status={status} expressions={expressions} count={count} onRemove={onRemove} />
   </section>;
 }
 
 function Review({ answer, onAnswer, onDone }: { answer: "know" | "again" | null; onAnswer: (a: "know" | "again") => void; onDone: () => void }) {
   const [flipped, setFlipped] = useState(false);
   return <section className="screen review-screen"><div className="review-top"><button onClick={onDone}>×</button><div className="progress"><i /></div><span>1 / 8</span></div><div className="eyebrow">오늘의 복습</div>
-    <button className={`flashcard ${flipped ? "flipped" : ""}`} onClick={() => setFlipped(true)}>
-      {!flipped ? <><small>이 표현을 기억하시나요?</small><div className="jp-word">映画館で<br/>映画を見る</div><span className="tap-hint">카드를 눌러 뜻 보기</span></> : <><small>뜻</small><div className="ko-word">영화관에서<br/>영화를 보다</div><div className="example"><span>대화 속 문장</span><p>週末は映画館で映画を見たよ。</p></div></>}
+    <button className={`flip-card ${flipped ? "flipped" : ""}`} onClick={() => setFlipped(true)}>
+      {!flipped ? <><small>이 표현을 기억하시나요?</small><div className="expression-term">映画館で<br/>映画を見る</div><span className="tap-hint">카드를 눌러 뜻 보기</span></> : <><small>뜻</small><div className="expression-meaning">영화관에서<br/>영화를 보다</div><div className="example"><span>대화 속 문장</span><p>週末は映画館で映画を見たよ。</p></div></>}
     </button>
     {flipped && !answer && <div className="answer-row"><button onClick={() => onAnswer("again")}><span>↻</span>다시 볼래요</button><button className="know" onClick={() => onAnswer("know")}><span>✓</span>알고 있어요</button></div>}
     {answer && <div className="result-panel"><strong>{answer === "know" ? "멋져요, 기억하고 있네요!" : "괜찮아요, 한 번 더 만나면 돼요."}</strong><button onClick={onDone}>복습 마치기</button></div>}
