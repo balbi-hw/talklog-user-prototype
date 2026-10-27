@@ -163,6 +163,7 @@ export default function TalklogApp() {
             expressions={expressions.expressions}
             count={expressions.count}
             onRemove={expressions.remove}
+            onUpdate={expressions.update}
           />
         )}
         {screen === "review" && <Review answer={answer} onAnswer={setAnswer} onDone={() => go("home")} />}
@@ -517,11 +518,13 @@ function Cards({
   expressions,
   count,
   onRemove,
+  onUpdate,
 }: {
   status: UseExpressionsResult["status"];
   expressions: UseExpressionsResult["expressions"];
   count: number;
   onRemove: (id: string) => void;
+  onUpdate: UseExpressionsResult["update"];
 }) {
   return <section className="screen cards-screen">
     <div className="eyebrow">나의 표현</div>
@@ -536,7 +539,7 @@ function Cards({
       <p>저장한 표현으로 복습하는 기능은 아직 만들지 않았어요.</p>
     </div>
 
-    <ExpressionList status={status} expressions={expressions} count={count} onRemove={onRemove} />
+    <ExpressionList status={status} expressions={expressions} count={count} onRemove={onRemove} onUpdate={onUpdate} />
   </section>;
 }
 
