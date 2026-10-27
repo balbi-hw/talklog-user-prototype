@@ -1,6 +1,26 @@
 @import "tailwindcss";
 
 :root { --ink:#19352e; --muted:#73837e; --green:#235e4d; --mint:#dff4e9; --cream:#f7f5ee; --line:#e6e9e4; --coral:#f27358; }
+/* 003-review — 실제 복습 진입·세션·완료, 기존 색상 변수만 사용 */
+.review-entry { margin-top:28px; padding:20px; border:1px solid var(--line); border-radius:20px; background:var(--cream); }
+.review-entry h2 { font-size:19px; margin-bottom:12px; }
+.review-entry p,.review-help { font-size:13px; color:var(--muted); line-height:1.7; overflow-wrap:anywhere; }
+.review-entry strong { color:var(--green); }
+.review-secondary { border:1px solid var(--green); background:var(--cream); color:var(--green); border-radius:12px; padding:12px 16px; margin-top:10px; }
+.review-entry button:focus-visible,.review-session button:focus-visible,.review-complete button:focus-visible { outline:3px solid var(--coral); outline-offset:3px; }
+.review-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.review-stats strong { font-size:17px; text-align:center; overflow-wrap:anywhere; }
+.review-title { font-size:25px; }
+.review-top progress { flex:1; min-width:0; height:8px; accent-color:var(--green); }
+.review-expression { padding:26px 20px; border:1px solid var(--line); border-radius:24px; background:var(--cream); text-align:center; overflow-wrap:anywhere; }
+.review-expression .expression-term { font-size:30px; line-height:1.6; margin-bottom:10px; }
+.review-expression .expression-meaning { font-size:23px; font-weight:700; line-height:1.5; margin:24px 0 18px; }
+.review-example { font-size:16px; line-height:1.8; }
+.review-session .review-notice { min-height:24px; font-size:13px; color:var(--green); line-height:1.7; }
+.review-results { display:grid; gap:14px; margin:28px 0; }
+.review-results div { display:flex; justify-content:space-between; gap:12px; border-bottom:1px solid var(--line); padding:12px 0; }
+.review-results dd { margin:0; color:var(--green); font-weight:700; }
+.review-complete>.review-secondary { width:100%; }
 * { box-sizing:border-box; }
 html { background:#e9eee9; }
 body { margin:0; color:var(--ink); font-family:Arial,"Apple SD Gothic Neo","Noto Sans KR",sans-serif; -webkit-font-smoothing:antialiased; }
