@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import ExpressionList from "./components/ExpressionList";
+import HomeDate from "./components/HomeDate";
 import ExpressionSheet from "./components/ExpressionSheet";
 import Recorder from "./components/Recorder";
 import RoomList from "./components/RoomList";
@@ -32,7 +33,7 @@ type Screen = "home" | "rooms" | "room-create" | "room" | "feedback" | "cards" |
 const PARTNER_TRANSCRIPT = "週末は何をして過ごしたの？";
 
 /**
- * Feedback 화면이 저장하는 표현. AI 문장 교정이 미구현이라 내용은 Mock 이지만
+ * Feedback 화면이 저장하는 표현. AI 문장 다듬기가 미구현이라 내용은 Mock 이지만
  * **저장 동작은 실제**여야 한다 (FR-024, data-model.md E13).
  */
 const FEEDBACK_EXPRESSION: ExpressionDraft = {
@@ -42,12 +43,11 @@ const FEEDBACK_EXPRESSION: ExpressionDraft = {
   sourceRoom: roomName(MOCK_ROOM),
 };
 
-const Icon = ({ name }: { name: "home" | "chat" | "cards" | "user" }) => {
+const Icon = ({ name }: { name: "home" | "chat" | "cards" }) => {
   const paths = {
     home: "M3 10.8 12 3l9 7.8V21a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1V10.8Z",
     chat: "M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v8Z",
     cards: "M6 3h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm3 5h6M9 12h6M9 16h4",
-    user: "M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z",
   };
   return <svg aria-hidden="true" viewBox="0 0 24 24"><path d={paths[name]} /></svg>;
 };
@@ -191,7 +191,6 @@ export default function TalklogApp() {
           <button className="brand" onClick={() => go("home")} aria-label="홈으로 이동">
             <span className="brand-mark">t</span><span>talklog</span>
           </button>
-          <button className="avatar" aria-label="내 프로필">민</button>
         </header>
 
         {screen === "home" && <Home roomSummary={<RoomSummary items={overviews} status={rooms.status} onOpen={openRoom} onAll={() => go("rooms")} onCreate={() => go("room-create")} onReload={rooms.reload} />}
@@ -240,7 +239,6 @@ export default function TalklogApp() {
           <NavButton active={screen === "home"} icon="home" label="홈" onClick={() => go("home")} />
           <NavButton active={screen === "rooms" || screen === "room-create" || screen === "room" || screen === "feedback"} icon="chat" label="대화" onClick={() => go("rooms")} />
           <NavButton active={screen === "cards" || screen === "review"} icon="cards" label="카드" onClick={() => go("cards")} />
-          <NavButton active={false} icon="user" label="마이" onClick={() => {}} />
         </nav>
 
         {blockedNav && (
@@ -276,8 +274,8 @@ function Home({ roomSummary, onOpenRoom, onReview, onCards, reviews }: {
   roomSummary: React.ReactNode; onOpenRoom: () => void; onReview: () => void; onCards: () => void; reviews: UseReviewsResult;
 }) {
   return <section className="screen home-screen">
-    <div className="eyebrow">7월 22일 수요일</div>
-    <h1>좋은 아침이에요, 민지님<span className="hello-dot">.</span></h1>
+    <HomeDate />
+    <h1>반가워요<span className="hello-dot">.</span></h1>
     <p className="lead">오늘도 한 문장씩, 가볍게 시작해볼까요?</p>
 
     {roomSummary}
@@ -423,7 +421,7 @@ function Room({
     <div className="room-heading"><div className="room-partner-avatar" aria-hidden="true">{Array.from(room.partner)[0]}</div><div><h1 ref={roomHeadingRef} tabIndex={-1}>{roomName(room)}</h1><p>학습 짝 {room.partner} · {room.language}{room.id === MOCK_ROOM.id ? " · 예시 학습방" : ""}</p></div></div>
     <div className="room-context"><button onClick={onRooms}>← 학습방 목록</button><p>학습 짝에게 실제로 전달되지는 않아요. 녹음은 새로고침하면 사라져요.</p></div>
     {messages.length === 0 && <p className="room-empty" role="status">아직 음성 메시지가 없어요. 첫 음성 메시지를 녹음해보세요. 스크립트·번역은 아직 준비 중이에요.</p>}
-    <div className="day-divider"><span>오늘</span></div>
+    <div className="day-divider"><span>음성 메시지</span></div>
 
     {messages.map((message) => message.sender === "partner" ? (
       <div className="chat partner" key={message.id}>
@@ -546,7 +544,8 @@ function Feedback({
 
   return <section className="screen feedback-screen">
     <button className="back" onClick={onBack} aria-label="대화로 돌아가기">←</button>
-    <div className="eyebrow">AI 피드백</div><h1>잘 전달됐어요!<br/><span>조금 더 자연스럽게</span> 다듬어볼게요.</h1>
+    <div className="eyebrow">AI 피드백 · 예시</div><h1>잘 전달됐어요!<br/><span>조금 더 자연스럽게</span> 다듬어볼게요.</h1>
+    <p className="lead">아래 스크립트와 다듬은 문장은 예시예요. 실제 AI 분석은 준비 중이며, 카드 저장은 실제로 동작해요.</p>
     <div className="feedback-card original"><div className="card-label">내가 말한 문장</div><p>週末に映画館で映画を見ました。</p></div>
     <div className="connector-line" />
     <div className="feedback-card suggestion"><div className="card-label">✦ 더 자연스러운 표현</div><p>週末は映画館で映画を見たよ。</p><div className="why"><strong>왜 이렇게 바꿨나요?</strong><p>학습 짝과 나누는 편한 대화에서는 「〜ました」보다 「〜たよ」가 더 자연스러워요.</p></div></div>
@@ -602,6 +601,6 @@ function Cards({
   </section>;
 }
 
-function NavButton({ active, icon, label, onClick }: { active: boolean; icon: "home" | "chat" | "cards" | "user"; label: string; onClick: () => void }) {
+function NavButton({ active, icon, label, onClick }: { active: boolean; icon: "home" | "chat" | "cards"; label: string; onClick: () => void }) {
   return <button className={active ? "active" : ""} onClick={onClick}><Icon name={icon} /><span>{label}</span></button>;
 }
