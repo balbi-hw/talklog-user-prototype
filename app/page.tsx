@@ -231,6 +231,7 @@ export default function TalklogApp() {
             onReview={() => { reviews.start(); go("review"); }}
             onRoom={() => go("room")}
             onUpdate={expressions.update}
+            onReload={expressions.reload}
           />
         )}
         {screen === "review" && <ReviewSession reviews={reviews} onExit={() => go("home")} onRoom={() => go("room")} />}
@@ -580,6 +581,7 @@ function Cards({
   onReview,
   onRoom,
   onUpdate,
+  onReload,
 }: {
   status: UseExpressionsResult["status"];
   expressions: UseExpressionsResult["expressions"];
@@ -589,15 +591,17 @@ function Cards({
   onReview: () => void;
   onRoom: () => void;
   onUpdate: UseExpressionsResult["update"];
+  onReload: () => void;
 }) {
+  const reload = () => { onReload(); reviews.refresh(); };
   return <section className="screen cards-screen">
     <div className="eyebrow">나의 표현</div>
     <h1>내 표현</h1>
     <p className="lead">대화에서 발견한 표현을 다시 만나보세요.</p>
 
-    <ReviewEntry reviews={reviews} onStart={onReview} onRoom={onRoom} />
+    <ReviewEntry reviews={reviews} onStart={onReview} onRoom={onRoom} onReload={reload} />
 
-    <ExpressionList status={status} expressions={expressions} count={count} onRemove={onRemove} onUpdate={onUpdate} />
+    <ExpressionList status={status} expressions={expressions} count={count} onRemove={onRemove} onUpdate={onUpdate} onReload={reload} />
   </section>;
 }
 

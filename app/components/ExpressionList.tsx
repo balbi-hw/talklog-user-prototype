@@ -20,6 +20,7 @@ export type ExpressionListProps = {
   /** savedAt 내림차순으로 이미 정렬돼 있다. 여기서 다시 정렬하지 않는다 (FR-017) */
   expressions: SavedExpression[];
   count: number;
+  onReload: () => void;
   onRemove: (id: string) => void;
   onUpdate: (id: string, changes: ExpressionUpdate) => UpdateResult;
 };
@@ -33,6 +34,7 @@ export default function ExpressionList({
   status,
   expressions,
   count,
+  onReload,
   onRemove,
   onUpdate,
 }: ExpressionListProps) {
@@ -86,8 +88,9 @@ export default function ExpressionList({
         <p>
           브라우저 설정에서 이 사이트의 쿠키·사이트 데이터가 차단돼 있으면 저장한 표현을
           읽고 쓸 수 없어요. 설정이나 저장 공간을 확인해주세요.
-          {expressions.length > 0 ? " 입력한 내용은 유지돼요. 복구 후 다시 저장할 수 있어요." : " 설정을 되돌린 뒤 다시 열어주세요."}
+          {expressions.length > 0 ? " 입력한 내용은 유지돼요. 복구 후 다시 저장할 수 있어요." : " 설정을 되돌린 뒤 다시 읽기를 눌러주세요."}
         </p>
+        <button className="review-secondary" onClick={onReload}>다시 읽기</button>
       </div>
     ) : null;
 

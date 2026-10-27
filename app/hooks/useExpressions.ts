@@ -30,6 +30,7 @@ export type UseExpressionsResult = {
   save: (
     draft: ExpressionDraft,
   ) => { ok: true; saved: SavedExpression } | { ok: false; reason: SaveFailure };
+  reload: () => void;
   remove: (id: string) => boolean;
   update: (id: string, changes: ExpressionUpdate) => UpdateResult;
 };
@@ -95,7 +96,7 @@ export function useExpressions(): UseExpressionsResult {
    * 첫 렌더의 `status` 는 항상 `"loading"` 이다 (조항 1). 저장소 읽기를 렌더 중에 하면
    * 서버 렌더 결과와 달라져 hydration 이 어긋난다 (R-004).
    */
-  useEffect(() => {
+  const reload = useCallback(() => {
     const result = readAll();
     if (!result.ok) {
       setStatus("unavailable");
@@ -105,6 +106,8 @@ export function useExpressions(): UseExpressionsResult {
     applyExpressions(sortByNewest(result.items));
     setStatus("ready");
   }, [applyExpressions]);
+
+  useEffect(() => { reload(); }, [reload]);
 
   /**
    * 렌더 중에 불러도 안전하도록 ref 가 아니라 상태를 읽는다. 화면은 "지금 보이는 목록"을
@@ -211,6 +214,7 @@ export function useExpressions(): UseExpressionsResult {
     expressions,
     count: expressions.length,
     findDuplicate,
+    reload,
     save,
     remove,
     update,

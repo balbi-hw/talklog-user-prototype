@@ -3,8 +3,9 @@
 import { useEffect, useRef } from "react";
 import type { UseReviewsResult } from "../hooks/useReviews";
 
-export default function ReviewEntry({ reviews, onStart, onRoom }: {
+export default function ReviewEntry({ reviews, onStart, onRoom, onReload }: {
   reviews: UseReviewsResult; onStart: () => void; onRoom: () => void;
+  onReload?: () => void;
 }) {
   const heading = useRef<HTMLHeadingElement>(null);
   const retrying = useRef(false);
@@ -16,7 +17,7 @@ export default function ReviewEntry({ reviews, onStart, onRoom }: {
     {reviews.status === "loading" ? <p role="status">복습 기록을 읽고 있어요.</p> :
       reviews.status === "unavailable" ? <>
         <p role="status">저장소를 읽거나 쓸 수 없어요. 브라우저의 사이트 데이터 설정과 저장 공간을 확인해주세요.</p>
-        <button className="review-secondary" onClick={() => { retrying.current = true; reviews.refresh(); heading.current?.focus(); }}>다시 읽기</button>
+        <button className="review-secondary" onClick={() => { retrying.current = true; (onReload ?? reviews.refresh)(); heading.current?.focus(); }}>다시 읽기</button>
       </> : reviews.expressionCount === 0 ? <>
         <p>아직 저장한 표현이 없어요. 학습방에서 스크립트를 펼치고 배우고 싶은 부분을 골라 뜻과 함께 저장해보세요.</p>
         <button className="review-secondary" onClick={onRoom}>학습방으로 가기</button>
