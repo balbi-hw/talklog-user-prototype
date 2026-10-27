@@ -5,6 +5,10 @@ import ExpressionList from "./components/ExpressionList";
 import ExpressionSheet from "./components/ExpressionSheet";
 import Recorder from "./components/Recorder";
 import VoiceBubble from "./components/VoiceBubble";
+import ReviewHome from "./components/ReviewHome";
+import ReviewEntry from "./components/ReviewEntry";
+import ReviewSession from "./components/ReviewSession";
+import { useReviews, type UseReviewsResult } from "./hooks/useReviews";
 import { useExpressions, type UseExpressionsResult } from "./hooks/useExpressions";
 import { useTranscriptSelection } from "./hooks/useTranscriptSelection";
 import { useVoicePlayback, PREVIEW_ID } from "./hooks/useVoicePlayback";
@@ -67,7 +71,6 @@ type ExpressionSaving = {
 
 export default function TalklogApp() {
   const [screen, setScreen] = useState<Screen>("home");
-  const [answer, setAnswer] = useState<"know" | "again" | null>(null);
   // 화면을 옮겨도 전송한 메시지가 유지되도록 대화 상태는 셸에서 소유한다.
   const [messages, setMessages] = useState<VoiceMessage[]>(INITIAL_MESSAGES);
 
@@ -77,15 +80,28 @@ export default function TalklogApp() {
    * 화면이 조건부 렌더링이라 `Room` 이 언마운트되면 화면 안에 둔 상태는 사라진다.
    */
   const expressions = useExpressions();
+  const reviews = useReviews(expressions);
   // 이동이 막힌 목적지. null 이 아니면 확인을 기다리는 중이다.
   const [blockedNav, setBlockedNav] = useState<Screen | null>(null);
 
   const pendingRef = useRef<PendingRecording>({ hasPending: false, discard: () => {} });
+  const phoneRef = useRef<HTMLDivElement>(null);
+  const focusAfterReview = useRef(false);
+  useEffect(() => {
+    if (!focusAfterReview.current) return;
+    const heading = phoneRef.current?.querySelector<HTMLElement>("section h1");
+    if (heading) { heading.tabIndex = -1; heading.focus(); }
+    focusAfterReview.current = false;
+  }, [screen]);
   const reportPending = useCallback((pending: PendingRecording) => {
     pendingRef.current = pending;
   }, []);
 
   const move = (next: Screen) => {
+    if (screen === "review" && next !== "review") {
+      reviews.end();
+      focusAfterReview.current = true;
+    }
     setScreen(next);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -128,7 +144,7 @@ export default function TalklogApp() {
 
   return (
     <main className="app-shell">
-      <div className="phone-frame">
+      <div className="phone-frame" ref={phoneRef}>
         <header className="topbar">
           <button className="brand" onClick={() => go("home")} aria-label="홈으로 이동">
             <span className="brand-mark">t</span><span>talklog</span>
@@ -136,7 +152,8 @@ export default function TalklogApp() {
           <button className="avatar" aria-label="내 프로필">민</button>
         </header>
 
-        {screen === "home" && <Home onOpenRoom={() => go("room")} onReview={() => go("review")} />}
+        {screen === "home" && <Home onOpenRoom={() => go("room")} reviews={reviews}
+          onCards={() => go("cards")} onReview={() => { reviews.start(); go("review"); }} />}
         {screen === "room" && (
           <Room
             messages={messages}
@@ -163,9 +180,12 @@ export default function TalklogApp() {
             expressions={expressions.expressions}
             count={expressions.count}
             onRemove={expressions.remove}
+            reviews={reviews}
+            onReview={() => { reviews.start(); go("review"); }}
+            onRoom={() => go("room")}
           />
         )}
-        {screen === "review" && <Review answer={answer} onAnswer={setAnswer} onDone={() => go("home")} />}
+        {screen === "review" && <ReviewSession reviews={reviews} onExit={() => go("home")} onRoom={() => go("room")} />}
 
         <nav className="bottom-nav" aria-label="주요 메뉴">
           <NavButton active={screen === "home"} icon="home" label="홈" onClick={() => go("home")} />
@@ -203,7 +223,9 @@ export default function TalklogApp() {
   );
 }
 
-function Home({ onOpenRoom, onReview }: { onOpenRoom: () => void; onReview: () => void }) {
+function Home({ onOpenRoom, onReview, onCards, reviews }: {
+  onOpenRoom: () => void; onReview: () => void; onCards: () => void; reviews: UseReviewsResult;
+}) {
   return <section className="screen home-screen">
     <div className="eyebrow">7월 22일 수요일</div>
     <h1>좋은 아침이에요, 민지님<span className="hello-dot">.</span></h1>
@@ -220,17 +242,7 @@ function Home({ onOpenRoom, onReview }: { onOpenRoom: () => void; onReview: () =
       <div className="hero-footer"><span>일본어 · 12분 전</span><b>이어하기 →</b></div>
     </button>
 
-    <div className="section-title"><div><span>오늘의 복습</span><h2>기억을 한번 꺼내볼까요?</h2></div><span className="count-pill">8장</span></div>
-    <button className="review-card" onClick={onReview}>
-      <div className="review-icon">あ</div>
-      <div><strong>오늘 복습할 카드</strong><p>약 3분이면 충분해요</p></div>
-      <span className="circle-arrow">→</span>
-    </button>
-
-    <div className="section-title compact"><div><span>최근 학습</span><h2>이번 주 기록</h2></div><button>전체 보기</button></div>
-    <div className="stats-card">
-      <div><strong>4</strong><span>대화한 날</span></div><div><strong>23</strong><span>저장한 표현</span></div><div><strong>86%</strong><span>복습 정답률</span></div>
-    </div>
+    <ReviewHome reviews={reviews} onStart={onReview} onRoom={onOpenRoom} onCards={onCards} />
   </section>;
 }
 
@@ -517,37 +529,26 @@ function Cards({
   expressions,
   count,
   onRemove,
+  reviews,
+  onReview,
+  onRoom,
 }: {
   status: UseExpressionsResult["status"];
   expressions: UseExpressionsResult["expressions"];
   count: number;
   onRemove: (id: string) => void;
+  reviews: UseReviewsResult;
+  onReview: () => void;
+  onRoom: () => void;
 }) {
   return <section className="screen cards-screen">
     <div className="eyebrow">나의 표현</div>
     <h1>내 표현</h1>
     <p className="lead">대화에서 발견한 표현을 다시 만나보세요.</p>
 
-    {/* FR-026: 복습 서브도메인이 미구현이라 복습할 카드 수를 실제 값으로 바꿀 수 없다.
-        실제 값으로 바꿀 수 없는 표시는 지우고, 동작하는 것처럼 보이는 버튼도 남기지
-        않는다 (원칙 II). */}
-    <div className="review-pending">
-      <strong>복습은 아직 준비 중이에요</strong>
-      <p>저장한 표현으로 복습하는 기능은 아직 만들지 않았어요.</p>
-    </div>
+    <ReviewEntry reviews={reviews} onStart={onReview} onRoom={onRoom} />
 
     <ExpressionList status={status} expressions={expressions} count={count} onRemove={onRemove} />
-  </section>;
-}
-
-function Review({ answer, onAnswer, onDone }: { answer: "know" | "again" | null; onAnswer: (a: "know" | "again") => void; onDone: () => void }) {
-  const [flipped, setFlipped] = useState(false);
-  return <section className="screen review-screen"><div className="review-top"><button onClick={onDone}>×</button><div className="progress"><i /></div><span>1 / 8</span></div><div className="eyebrow">오늘의 복습</div>
-    <button className={`flip-card ${flipped ? "flipped" : ""}`} onClick={() => setFlipped(true)}>
-      {!flipped ? <><small>이 표현을 기억하시나요?</small><div className="expression-term">映画館で<br/>映画を見る</div><span className="tap-hint">카드를 눌러 뜻 보기</span></> : <><small>뜻</small><div className="expression-meaning">영화관에서<br/>영화를 보다</div><div className="example"><span>대화 속 문장</span><p>週末は映画館で映画を見たよ。</p></div></>}
-    </button>
-    {flipped && !answer && <div className="answer-row"><button onClick={() => onAnswer("again")}><span>↻</span>다시 볼래요</button><button className="know" onClick={() => onAnswer("know")}><span>✓</span>알고 있어요</button></div>}
-    {answer && <div className="result-panel"><strong>{answer === "know" ? "멋져요, 기억하고 있네요!" : "괜찮아요, 한 번 더 만나면 돼요."}</strong><button onClick={onDone}>복습 마치기</button></div>}
   </section>;
 }
 
