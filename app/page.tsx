@@ -4,6 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ExpressionList from "./components/ExpressionList";
 import ExpressionSheet from "./components/ExpressionSheet";
 import Recorder from "./components/Recorder";
+import RoomList from "./components/RoomList";
+import RoomCreate from "./components/RoomCreate";
+import RoomSummary from "./components/RoomSummary";
+import { useRooms } from "./hooks/useRooms";
+import { MOCK_ROOM, roomName, type Room as LearningRoom, type RoomOverview } from "./lib/rooms";
 import VoiceBubble from "./components/VoiceBubble";
 import ReviewHome from "./components/ReviewHome";
 import ReviewEntry from "./components/ReviewEntry";
@@ -16,10 +21,7 @@ import { useVoiceRecorder, type SentRecording } from "./hooks/useVoiceRecorder";
 import { SAVE_FAILURE_MESSAGE } from "./lib/expressions";
 import type { ExpressionDraft, SaveFailure, VoiceMessage } from "./lib/types";
 
-type Screen = "home" | "room" | "feedback" | "cards" | "review";
-
-/** 학습방은 여전히 하나뿐이다. 표현의 출처로 저장한다 (FR-011). */
-const ROOM_NAME = "유키와 일본어 대화";
+type Screen = "home" | "rooms" | "room-create" | "room" | "feedback" | "cards" | "review";
 
 /**
  * 스크립트가 붙은 학습 짝의 예시 메시지 전체 텍스트. 표현의 예문으로 저장한다 (FR-010).
@@ -37,7 +39,7 @@ const FEEDBACK_EXPRESSION: ExpressionDraft = {
   term: "映画館で映画を見る",
   meaning: "영화관에서 영화를 보다",
   example: "週末は映画館で映画を見たよ。",
-  sourceRoom: ROOM_NAME,
+  sourceRoom: roomName(MOCK_ROOM),
 };
 
 const Icon = ({ name }: { name: "home" | "chat" | "cards" | "user" }) => {
@@ -72,7 +74,28 @@ type ExpressionSaving = {
 export default function TalklogApp() {
   const [screen, setScreen] = useState<Screen>("home");
   // 화면을 옮겨도 전송한 메시지가 유지되도록 대화 상태는 셸에서 소유한다.
-  const [messages, setMessages] = useState<VoiceMessage[]>(INITIAL_MESSAGES);
+  const rooms = useRooms();
+  const [selectedRoomId, setSelectedRoomId] = useState(MOCK_ROOM.id);
+  const [messagesByRoom, setMessagesByRoom] = useState<Record<string, VoiceMessage[]>>({ [MOCK_ROOM.id]: INITIAL_MESSAGES });
+  const [activityByRoom, setActivityByRoom] = useState<Record<string, number>>({});
+  const messagesRef = useRef(messagesByRoom);
+  messagesRef.current = messagesByRoom;
+  const selectedRoom = rooms.rooms.find((room) => room.id === selectedRoomId) ?? MOCK_ROOM;
+  const overviews: RoomOverview[] = [...rooms.rooms]
+    .sort((a, b) => (activityByRoom[b.id] ?? b.createdAt) - (activityByRoom[a.id] ?? a.createdAt) || a.id.localeCompare(b.id))
+    .map((room) => {
+      const messages = messagesByRoom[room.id] ?? [];
+      const sentAt = activityByRoom[room.id];
+      return { room, messageCount: messages.length,
+        lastMessageLabel: messages.length === 0 ? null : sentAt !== undefined
+          ? new Date(sentAt).toLocaleString("ko-KR") : "예시 오전 9:46" };
+    });
+
+  useEffect(() => () => {
+    Object.values(messagesRef.current).flat().forEach((message) => {
+      if (message.url) URL.revokeObjectURL(message.url);
+    });
+  }, []);
 
   /**
    * 표현 모음의 단일 소유자 (contracts/use-expressions.md). 저장은 `Room`·`Feedback`
@@ -127,20 +150,39 @@ export default function TalklogApp() {
     if (next) move(next);
   };
 
+  const openRoom = (id: string) => {
+    setSelectedRoomId(id);
+    go("room");
+  };
+
+  const removeRoom = (id: string): boolean => {
+    if (!rooms.remove(id)) return false;
+    (messagesByRoom[id] ?? []).forEach((message) => {
+      if (message.url) URL.revokeObjectURL(message.url);
+    });
+    setMessagesByRoom((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+    setActivityByRoom((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+    if (selectedRoomId === id) setSelectedRoomId(MOCK_ROOM.id);
+    return true;
+  };
+
   const addRecordedMessage = useCallback((recording: SentRecording) => {
-    setMessages((current) => [
-      ...current,
-      {
-        id: `r${Date.now()}`,
-        sender: "me",
-        durationMs: recording.durationMs,
-        sentAtLabel: timeLabel(),
-        source: "recorded",
-        url: recording.url,
-        readLabel: null,
-      },
-    ]);
-  }, []);
+    const sentAt = Date.now();
+    setMessagesByRoom((current) => ({ ...current, [selectedRoom.id]: [
+      ...(current[selectedRoom.id] ?? []),
+      { id: `r${sentAt}`, sender: "me", durationMs: recording.durationMs,
+        sentAtLabel: timeLabel(), source: "recorded", url: recording.url, readLabel: null },
+    ] }));
+    setActivityByRoom((current) => ({ ...current, [selectedRoom.id]: sentAt }));
+  }, [selectedRoom.id]);
 
   return (
     <main className="app-shell">
@@ -152,11 +194,17 @@ export default function TalklogApp() {
           <button className="avatar" aria-label="내 프로필">민</button>
         </header>
 
-        {screen === "home" && <Home onOpenRoom={() => go("room")} reviews={reviews}
-          onCards={() => go("cards")} onReview={() => { reviews.start(); go("review"); }} />}
+        {screen === "home" && <Home roomSummary={<RoomSummary items={overviews} status={rooms.status} onOpen={openRoom} onAll={() => go("rooms")} onCreate={() => go("room-create")} onReload={rooms.reload} />}
+          reviews={reviews} onOpenRoom={() => go("rooms")} onCards={() => go("cards")}
+          onReview={() => { reviews.start(); go("review"); }} />}
+        {screen === "rooms" && <RoomList items={overviews} status={rooms.status} onOpen={openRoom} onCreate={() => go("room-create")} onRemove={removeRoom} onReload={rooms.reload} />}
+        {screen === "room-create" && <RoomCreate status={rooms.status} onCreate={rooms.create} onCreated={(room) => openRoom(room.id)} onCancel={() => go("rooms")} />}
         {screen === "room" && (
           <Room
-            messages={messages}
+            key={selectedRoom.id}
+            room={selectedRoom}
+            onRooms={() => go("rooms")}
+            messages={messagesByRoom[selectedRoom.id] ?? []}
             onSendRecording={addRecordedMessage}
             onFeedback={() => go("feedback")}
             onPendingChange={reportPending}
@@ -189,7 +237,7 @@ export default function TalklogApp() {
 
         <nav className="bottom-nav" aria-label="주요 메뉴">
           <NavButton active={screen === "home"} icon="home" label="홈" onClick={() => go("home")} />
-          <NavButton active={screen === "room" || screen === "feedback"} icon="chat" label="대화" onClick={() => go("room")} />
+          <NavButton active={screen === "rooms" || screen === "room-create" || screen === "room" || screen === "feedback"} icon="chat" label="대화" onClick={() => go("rooms")} />
           <NavButton active={screen === "cards" || screen === "review"} icon="cards" label="카드" onClick={() => go("cards")} />
           <NavButton active={false} icon="user" label="마이" onClick={() => {}} />
         </nav>
@@ -223,30 +271,23 @@ export default function TalklogApp() {
   );
 }
 
-function Home({ onOpenRoom, onReview, onCards, reviews }: {
-  onOpenRoom: () => void; onReview: () => void; onCards: () => void; reviews: UseReviewsResult;
+function Home({ roomSummary, onOpenRoom, onReview, onCards, reviews }: {
+  roomSummary: React.ReactNode; onOpenRoom: () => void; onReview: () => void; onCards: () => void; reviews: UseReviewsResult;
 }) {
   return <section className="screen home-screen">
     <div className="eyebrow">7월 22일 수요일</div>
     <h1>좋은 아침이에요, 민지님<span className="hello-dot">.</span></h1>
     <p className="lead">오늘도 한 문장씩, 가볍게 시작해볼까요?</p>
 
-    <button className="hero-card" onClick={onOpenRoom}>
-      <div className="live-chip"><span /> 새 메시지 2개</div>
-      <div className="hero-avatars"><span>유</span><span>민</span></div>
-      <div className="hero-copy">
-        <small>진행 중인 학습방</small>
-        <h2>유키와 일본어 대화</h2>
-        <p>“週末は何をして過ごしたの？”</p>
-      </div>
-      <div className="hero-footer"><span>일본어 · 12분 전</span><b>이어하기 →</b></div>
-    </button>
+    {roomSummary}
 
     <ReviewHome reviews={reviews} onStart={onReview} onRoom={onOpenRoom} onCards={onCards} />
   </section>;
 }
 
 function Room({
+  room,
+  onRooms,
   messages,
   onSendRecording,
   onFeedback,
@@ -255,11 +296,15 @@ function Room({
   findDuplicate,
   onSaveExpression,
 }: {
+  room: LearningRoom;
+  onRooms: () => void;
   messages: VoiceMessage[];
   onSendRecording: (recording: SentRecording) => void;
   onFeedback: () => void;
   onPendingChange: (pending: PendingRecording) => void;
 } & ExpressionSaving) {
+  const roomHeadingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => { roomHeadingRef.current?.focus(); }, []);
   const [showScript, setShowScript] = useState(false);
   const [showTranslation, setShowTranslation] = useState(false);
 
@@ -281,8 +326,8 @@ function Room({
   const { selection, clear } = useTranscriptSelection({
     transcriptRef,
     example: PARTNER_TRANSCRIPT,
-    sourceRoom: ROOM_NAME,
-    enabled: showScript,
+    sourceRoom: roomName(room),
+    enabled: showScript && room.id === MOCK_ROOM.id,
   });
 
   /** 스크립트를 닫으면 표현을 고를 수단 자체가 사라진다 (FR-006). 초안도 함께 버린다. */
@@ -374,16 +419,18 @@ function Room({
   };
 
   return <section className="screen room-screen">
-    <div className="room-heading"><div className="friend-avatar">유</div><div><h1>{ROOM_NAME}</h1><p><span /> 일본어 학습 중</p></div><button aria-label="더 보기">•••</button></div>
+    <div className="room-heading"><div className="room-partner-avatar" aria-hidden="true">{Array.from(room.partner)[0]}</div><div><h1 ref={roomHeadingRef} tabIndex={-1}>{roomName(room)}</h1><p>학습 짝 {room.partner} · {room.language}{room.id === MOCK_ROOM.id ? " · 예시 학습방" : ""}</p></div></div>
+    <div className="room-context"><button onClick={onRooms}>← 학습방 목록</button><p>학습 짝에게 실제로 전달되지는 않아요. 녹음은 새로고침하면 사라져요.</p></div>
+    {messages.length === 0 && <p className="room-empty" role="status">아직 음성 메시지가 없어요. 첫 음성 메시지를 녹음해보세요. 스크립트·번역은 아직 준비 중이에요.</p>}
     <div className="day-divider"><span>오늘</span></div>
 
     {messages.map((message) => message.sender === "partner" ? (
       <div className="chat partner" key={message.id}>
-        <div className="mini-avatar">유</div>
+        <div className="mini-avatar">{Array.from(room.partner)[0]}</div>
         <div className="partner-message">
           {renderBubble(message)}
           {/* 스크립트·번역은 STT 가 붙은 예시 메시지에만 있다. 실제 녹음의 STT 는 범위 밖이다. */}
-          {message.source === "mock" && <>
+          {room.id === MOCK_ROOM.id && message.source === "mock" && <>
             <div className="detail-toggles">
               <button className={showScript ? "active" : ""} onClick={toggleScript} aria-expanded={showScript} aria-controls="partner-script">스크립트 <span>{showScript ? "⌃" : "⌄"}</span></button>
               <button className={showTranslation ? "active" : ""} onClick={() => setShowTranslation((visible) => !visible)} aria-expanded={showTranslation} aria-controls="partner-translation">번역 <span>{showTranslation ? "⌃" : "⌄"}</span></button>
@@ -437,7 +484,7 @@ function Room({
       </div>
     ))}
 
-    <button className="feedback-banner" onClick={onFeedback}><span className="spark">✦</span><div><strong>내 문장을 확인해볼까요?</strong><p>스크립트와 자연스러운 표현이 준비됐어요</p></div><b>→</b></button>
+    {room.id === MOCK_ROOM.id && <button className="feedback-banner" onClick={onFeedback}><span className="spark">✦</span><div><strong>내 문장을 확인해볼까요?</strong><p>스크립트와 자연스러운 표현이 준비됐어요</p></div><b>→</b></button>}
 
     <Recorder
       state={recorder.state}

@@ -7,6 +7,8 @@
 ## 주요 기능
 
 - 진행 중인 학습방과 오늘의 복습 현황 확인
+- 학습방 목록·개설·확인 후 삭제, 학습 짝·학습 언어 구분과 최근 활동 순 홈 요약
+- 학습방 정보의 브라우저 저장소 보관, 학습방별 녹음 메시지 분리
 - 학습 짝과 내가 보낸 음성 메시지 UI
 - 학습 짝 음성의 스크립트와 번역을 각각 독립적으로 열고 닫기
 - 실제 음성 녹음(최대 60초)과 재생
@@ -103,11 +105,13 @@ talklog/
 │  ├─ page.tsx          # 화면, 상태 및 사용자 상호작용
 │  ├─ components/       # Recorder, VoiceBubble,
 │  │                    #   ExpressionSheet, ExpressionList,
-│  │                    #   ReviewEntry, ReviewHome, ReviewSession, ReviewComplete
+│  │                    #   ReviewEntry, ReviewHome, ReviewSession, ReviewComplete,
+│  │                    #   RoomList, RoomCreate, RoomSummary
 │  ├─ hooks/            # useVoiceRecorder, useVoicePlayback,
-│  │                    #   useExpressions, useTranscriptSelection, useReviews
+│  │                    #   useExpressions, useTranscriptSelection, useReviews, useRooms
 │  └─ lib/              # 공유 타입(types.ts), 오디오 유틸리티(audio.ts),
-│                       #   표현 저장소(expressions.ts), 복습 저장소/스케줄(reviews.ts)
+│                       #   표현 저장소(expressions.ts), 복습 저장소/스케줄(reviews.ts),
+│                       #   학습방 저장소(rooms.ts)
 ├─ docs/                # 도메인 모델
 ├─ specs/               # 기능별 명세·계획·작업 (spec-driven development)
 ├─ .specify/            # spec-kit 설정과 프로젝트 헌법
@@ -120,6 +124,11 @@ talklog/
 ## 현재 구현 범위
 
 이 프로젝트는 사용자 흐름을 검증하기 위한 프론트엔드 프로토타입입니다. 음성 녹음·재생과 표현 저장·복습은 실제로 동작합니다. 녹음 결과는 브라우저 메모리에만 있어 새로고침하면 사라지지만, 저장한 표현은 브라우저 저장소(`localStorage`)에 남아 새로고침 이후에도 유지됩니다. 그 밖의 콘텐츠는 로컬 Mock 데이터입니다. 대화에 미리 놓인 예시 음성 메시지는 재생할 소리가 없으므로 재생 버튼이 비활성으로 표시되고, AI 피드백 화면의 교정 내용은 Mock이지만 그 화면의 저장 동작은 실제 저장 경로를 씁니다. 복습은 저장한 표현과 별도 저장소(`talklog.reviews`)에 기억 여부·다음 시점·누적 응답 수를 보관합니다. 날짜는 기기의 로컬 날짜이며 응답마다 저장하므로 중간에 나가도 기록이 남습니다. 완료 통계는 카드별 최종 응답, 누적 정답률은 재등장을 포함한 모든 응답 기준입니다. 대화한 날 통계는 데이터가 없어 제거했습니다. 동시 탭 쓰기의 원자성 및 기기 간 동기화는 제공하지 않습니다.
+
+학습방 목록·개설·삭제는 실제로 동작합니다. 학습 짝 이름(1~20자)과 일본어·영어·중국어 중 학습 언어를 정해 개설하며, 학습방 정보는 `localStorage`의 `talklog.rooms`에 남습니다. 홈에는 최근 활동 순 최대 3개가 보이고, 대화 메뉴에서 전체 목록을 엽니다. 삭제에는 확인 단계가 있고 저장한 표현은 지우지 않습니다. 저장소 오류는 안내와 재시도를 제공하며 성공한 것처럼 표시하지 않습니다.
+
+“유키와 일본어 대화”는 삭제할 수 없는 예시 학습방입니다. 예시 스크립트·번역·피드백은 이 학습방에만 있습니다. 새 학습방은 비어 있는 상태에서 실제 녹음을 시작할 수 있으며, 녹음 메시지는 학습방별 메모리에만 있어 새로고침하면 사라집니다. 학습 짝 초대·알림·실제 전달은 구현하지 않았습니다.
+
 
 다음 기능은 화면과 상태 전환만 구현되어 있고 실제 서비스와 연동되지 않았습니다.
 
