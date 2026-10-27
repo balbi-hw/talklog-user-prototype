@@ -18,7 +18,7 @@ type Screen = "home" | "room" | "feedback" | "cards" | "review";
 const ROOM_NAME = "유키와 일본어 대화";
 
 /**
- * 스크립트가 붙은 예시 상대 메시지의 전체 텍스트. 표현의 예문으로 저장한다 (FR-010).
+ * 스크립트가 붙은 학습 짝의 예시 메시지 전체 텍스트. 표현의 예문으로 저장한다 (FR-010).
  *
  * 실제로 녹음한 내 음성에는 스크립트가 없다 — STT 가 미구현이므로 표현을 고를 수 있는
  * 것은 이 예시 스크립트뿐이다 (spec.md Assumptions).
@@ -255,7 +255,7 @@ function Room({
   const recorder = useVoiceRecorder({ onSend: onSendRecording });
 
   /**
-   * 스크립트가 붙은 예시 상대 메시지는 하나뿐이므로 ref 도 하나다
+   * 스크립트가 붙은 학습 짝의 예시 메시지는 하나뿐이므로 ref 도 하나다
    * (spec.md Assumptions — 실제 녹음에는 STT 가 없다).
    */
   const transcriptRef = useRef<HTMLParagraphElement>(null);
@@ -296,11 +296,20 @@ function Room({
     setSavedTerm(null);
   };
 
+  /**
+   * 저장·취소하면 누른 버튼이 사라지므로 포커스를 스크립트로 돌려놓는다 (US1-4,
+   * expression-sheet-ui 조항 10).
+   */
+  const returnToTranscript = () => {
+    clear();
+    transcriptRef.current?.focus({ preventScroll: true });
+  };
+
   /** 취소하면 아무것도 저장되지 않는다 (FR-013, E9). */
   const cancelDraft = () => {
     setDraft(null);
     setSaveError(null);
-    clear();
+    returnToTranscript();
   };
 
   const submitDraft = () => {
@@ -314,7 +323,7 @@ function Room({
     setSavedTerm(result.saved.term);
     setDraft(null);
     setSaveError(null);
-    clear();
+    returnToTranscript();
   };
 
   const duplicateOf = draft ? findDuplicate(draft.term) : null;
@@ -478,9 +487,9 @@ function Feedback({
   return <section className="screen feedback-screen">
     <button className="back" onClick={onBack} aria-label="대화로 돌아가기">←</button>
     <div className="eyebrow">AI 피드백</div><h1>잘 전달됐어요!<br/><span>조금 더 자연스럽게</span> 다듬어볼게요.</h1>
-    <div className="feedback-card original"><div className="card-label">내가 말한 문장</div><p>週末に映画館で映画を見ました。</p><button className="sound">▶ 들어보기</button></div>
+    <div className="feedback-card original"><div className="card-label">내가 말한 문장</div><p>週末に映画館で映画を見ました。</p></div>
     <div className="connector-line" />
-    <div className="feedback-card suggestion"><div className="card-label">✦ 더 자연스러운 표현</div><p>週末は映画館で映画を見たよ。</p><button className="sound">▶ 들어보기</button><div className="why"><strong>왜 이렇게 바꿨나요?</strong><p>친구와의 편한 대화에서는 「〜ました」보다 「〜たよ」가 더 자연스러워요.</p></div></div>
+    <div className="feedback-card suggestion"><div className="card-label">✦ 더 자연스러운 표현</div><p>週末は映画館で映画を見たよ。</p><div className="why"><strong>왜 이렇게 바꿨나요?</strong><p>학습 짝과 나누는 편한 대화에서는 「〜ました」보다 「〜たよ」가 더 자연스러워요.</p></div></div>
     <div className="expression">
       <div>
         <span>저장할 표현</span>

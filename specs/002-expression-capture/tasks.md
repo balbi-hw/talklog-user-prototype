@@ -151,7 +151,27 @@ S2-2(빈 상태가 한 순간도 잘못 보이지 않음)와 S2-8·9·10(가짜�
 - [X] T026 `app/lib/expressions.ts` + `app/hooks/useExpressions.ts` — FR-015 경로 점검. 사이트 데이터를 차단한 상태에서 읽기·쓰기·삭제가 모두 예외를 삼키지 않고 `status = "unavailable"` 로 이어지는지, 그 상태에서 앱의 나머지가 정상 동작하는지 확인한다. 설정을 되돌린 뒤 저장하면 `"ready"` 로 복귀해야 한다 (계약 조항 7·8, S6)
 - [X] T027 `README.md` — 문서 동기화 (SC-009, 원칙 II). "현재 구현 범위"의 미구현 목록에서 "플래시카드 영구 저장"을 제거한다. "주요 기능"에 스크립트에서 표현을 골라 저장하는 흐름을 반영한다. "프로젝트 구조" 트리에 `app/lib/expressions.ts`, `app/hooks/useExpressions.ts`, `app/hooks/useTranscriptSelection.ts`, `app/components/ExpressionSheet.tsx`, `app/components/ExpressionList.tsx` 를 추가한다. 용어집에 따라 README 전체에서 "플래시카드"를 "카드"로, 저장 단위를 "표현"으로 통일한다 (원칙 I). `docs/domain-model.md` §4의 드리프트 표에서 해소된 항목을 지운다
 - [X] T028 `package.json` 의 `npm run build` 실행 — TypeScript 오류 0개로 통과해야 한다. `any` 사용이 남았다면 주석으로 정당화하거나 타입을 좁힌다 (Constitution 품질 게이트, 기술 제약)
-- [ ] T029 [quickstart.md](./quickstart.md) S1~S8 전체 수동 검증 — S3(모바일 롱프레스)은 실기기 권장이며 LAN IP 접속으로 가능하다(001과 달리 secure context 제약이 없다). S6은 브라우저 사이트 데이터 차단 또는 DevTools 에서 `localStorage.setItem` 을 예외를 던지도록 덮어써 확인한다. 하나라도 실패하면 완료로 보고하지 않는다
+- [X] T029 [quickstart.md](./quickstart.md) S1~S8 전체 수동 검증 — S3(모바일 롱프레스)은 실기기 권장이며 LAN IP 접속으로 가능하다(001과 달리 secure context 제약이 없다). S6은 브라우저 사이트 데이터 차단 또는 DevTools 에서 `localStorage.setItem` 을 예외를 던지도록 덮어써 확인한다. 하나라도 실패하면 완료로 보고하지 않는다
+
+---
+
+## Phase 7: T029 검증과 analyze에서 드러난 보완 (2026-10-27)
+
+**Purpose**: T029 1차 검증(브라우저 자동화, 49개 항목 중 46개 통과)과 `/speckit-analyze`가 찾은
+위반을 갚는다. 원칙 III · I · II의 MUST 위반이므로 병합 전에 끝내야 한다.
+
+**1차 검증에서 실패한 항목**: S7-2(키보드만으로 선택을 시작할 수 없음), S8-3(Feedback 화면의
+"친구"), S6 조항 8(쓰기 실패 뒤 새로고침 없이는 다시 저장할 수 없음). 이 밖에 S7-3은
+통과했지만 포커스가 `body` 로 빠져 뜻 입력칸까지 `Tab` 16번이 필요했다.
+
+- [X] T030 [US1] `app/hooks/useTranscriptSelection.ts` — **FR-028 · SC-010 · 원칙 III**. 스크립트 요소의 `keydown` 에서 방향키를 `Selection.modify()` 로 옮겨 선택을 만든다 (research.md R-002 개정, use-transcript-selection 계약 조항 10). Chromium 은 캐럿 브라우징이 꺼져 있으면 `tabIndex={0}` 만으로는 키보드 선택을 시작하지 못한다. 선택을 *읽는* 경로(조항 6)는 바꾸지 않는다
+- [X] T031 [US1] `app/components/ExpressionSheet.tsx` + `app/page.tsx` — **포커스 이동** (expression-sheet-ui 조항 10). 저장을 시작하면 뜻 입력칸으로, 저장·취소하면 스크립트로 포커스를 옮긴다
+- [X] T032 [US1] `app/components/ExpressionSheet.tsx` — **저장소 사용 불가 상태에서 다시 시도할 수 있게 한다** (expression-sheet-ui 표 `unavailable` 행, use-expressions 조항 8). 안내는 보여주되 "이 표현 저장하기"를 숨기거나 저장 버튼을 비활성으로 두지 않는다. 덮어쓰기 위험은 `useExpressions` 가 쓰기 전에 다시 읽어 이미 막고 있다
+- [X] T033 `app/layout.tsx` + `app/page.tsx` + `README.md` — **원칙 I 용어집 위반 정리** (analyze C1 · C2). "친구" · "상대방" → "학습 짝". 코드 주석의 "예시 상대 메시지"도 함께 정리한다
+- [X] T034 `app/page.tsx` — **원칙 II 위반 제거** (analyze C3). Feedback 화면의 "▶ 들어보기" 버튼 2개는 눌러도 아무 일이 없다. 음성 합성은 이해 보조 서브도메인의 미구현이므로 제거한다 (T006에서 Cards 화면의 ▶ 버튼을 지운 것과 같은 기준)
+- [X] T035 `specs/002-expression-capture/` — 문서 정합 (analyze I1 · I2 · U1 · U2). expression-sheet 계약 조항 4에 `invalid-term` 추가, plan.md의 data-model 절 번호(§5→§6) 수정, 스크립트를 닫을 때 초안 처리를 계약 조항 11로 명시, quickstart에 S1-12 · S6-5 행 추가와 S7-2 · S7-3 기대 결과 구체화, 검증 통과 후 spec.md `Status` 갱신
+- [X] T036 `npm run build` 와 [quickstart.md](./quickstart.md) S1~S8 재검증 — T029를 다시 수행한다. 통과하면 T029와 함께 체크한다
+  - **결과 (2026-10-27)**: `npm run build` 통과. Edge 헤드리스 자동화로 S1~S8 55개 항목 전부 통과, S3-3은 320 · 390 · 520px에서 확인. **S3-1 · S3-2(실기기 롱프레스와 선택 핸들)는 자동화로 재현할 수 없어 아직 실기기에서 확인하지 않았다** — quickstart가 '실기기 권장'으로 둔 항목이며 PR 검토 체크리스트로 넘긴다
 
 ---
 
@@ -171,6 +191,8 @@ Phase 4 (US2, P2)      T016~T020
 Phase 5 (US3, P3)      T021~T024
         ↓
 Phase 6 (Polish)       T025~T029
+        ↓
+Phase 7 (보완)          T030~T036         T029 1차 검증 실패분
 ```
 
 ### User Story Dependencies
@@ -245,7 +267,7 @@ quickstart.md S1·S3으로 검증한 뒤 여기서 멈춰도 프로토타입으�
 
 ## Notes
 
-- 총 29개 작업: Setup 2, Foundational 5, US1 8, US2 5, US3 4, Polish 5
+- 총 36개 작업: Setup 2, Foundational 5, US1 8, US2 5, US3 4, Polish 5, 보완 7 (Phase 7은 T029 검증 후 추가)
 - 신규 런타임 의존성 0개 (원칙 IV). `npm install` 로 무언가를 추가하는 작업은 없다.
   형태소 분석기와 저장소 래퍼 라이브러리를 도입하지 않는다
 - `Home` · `Review` 화면과 001의 음성 관련 파일(`Recorder.tsx`, `VoiceBubble.tsx`,

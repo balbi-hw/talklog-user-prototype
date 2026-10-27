@@ -67,13 +67,14 @@ export default function ExpressionSheet({
           <span>고른 표현</span>
           <p>{selection.text}</p>
         </div>
-        {isUnavailable ? (
+        {/* 저장소를 쓸 수 없어도 시도는 막지 않는다. 막으면 설정이 바뀌어도 새로고침
+            없이는 다시 저장할 수 없다 (use-expressions 조항 8). */}
+        {isUnavailable && (
           <p className="expression-sheet-notice">{SAVE_FAILURE_MESSAGE["storage-unavailable"]}</p>
-        ) : (
-          <button className="save-button" onClick={onStart}>
-            이 표현 저장하기
-          </button>
         )}
+        <button className="save-button" onClick={onStart}>
+          이 표현 저장하기
+        </button>
       </div>
     );
   }
@@ -90,12 +91,11 @@ export default function ExpressionSheet({
       ? "invalid-meaning"
       : duplicateOf
         ? "duplicate"
-        : isUnavailable
-          ? "storage-unavailable"
-          : null;
+        : null;
 
   // 실제 저장 시도가 실패했으면 그 이유가 우선한다 (쓰기 시점에만 드러나는 실패가 있다).
-  const notice = saveError ?? blockedReason;
+  // 저장소를 쓸 수 없다는 안내는 보여주되 저장 버튼을 막지는 않는다 (조항 8).
+  const notice = saveError ?? blockedReason ?? (isUnavailable ? "storage-unavailable" : null);
 
   return (
     <div className="expression-sheet">
@@ -112,8 +112,11 @@ export default function ExpressionSheet({
 
         <label htmlFor={MEANING_INPUT_ID}>뜻</label>
         {/* 뜻은 사용자가 직접 적는다 (FR-007). 자동 번역은 이 기능의 범위가 아니다. */}
+        {/* 저장을 시작하면 누른 버튼이 사라지므로 포커스를 여기로 옮긴다. 옮기지 않으면
+            포커스가 body 로 빠진다 (계약 조항 10). */}
         <input
           id={MEANING_INPUT_ID}
+          autoFocus
           value={draft.meaning}
           onChange={(event) => onMeaningChange(event.target.value)}
           placeholder="이 표현의 뜻을 적어주세요"

@@ -13,8 +13,8 @@
 
 기술 접근은 브라우저 표준 API만 사용한다. 범위 고르기는 `window.getSelection()`으로
 읽고, 스크립트 요소 안에서 일어난 선택만 받아들인다(Phase 0 연구 결과 R-001). 키보드
-사용자도 `Shift`+방향키로 같은 선택을 만들 수 있으므로 스크립트 요소를 포커스 가능하게
-두면 FR-028을 별도 UI 없이 충족한다(R-002). 저장소는 `localStorage`를 쓰고 읽기·쓰기를
+사용자를 위해 스크립트 요소를 포커스 가능하게 두고 방향키를 `Selection.modify()` 로
+옮겨 같은 선택을 만든다. 별도 UI 없이 FR-028을 충족한다(R-002, T029 검증 후 개정). 저장소는 `localStorage`를 쓰고 읽기·쓰기를
 모두 `try`/`catch`로 감싼다(R-003). 서버 렌더링 중에는 저장소를 읽을 수 없으므로 "아직
 읽지 않음" 상태를 "저장한 것이 없음"과 구분해야 한다(R-004).
 
@@ -72,9 +72,9 @@
 
 | 원칙 | 판정 | 설계 반영 내용 |
 |------|------|----------------|
-| I | PASS | 신규 식별자를 용어집에서만 뽑았다 — `Expression`, `SavedExpression`, `useExpressions`, `.expression-card`. FR-027의 이름 변경 목록을 data-model.md §5에 표로 고정했다. |
+| I | PASS | 신규 식별자를 용어집에서만 뽑았다 — `Expression`, `SavedExpression`, `useExpressions`, `.expression-card`. FR-027의 이름 변경 목록을 data-model.md §6에 표로 고정했다. |
 | II | PASS | `Cards` 화면이 실제 저장 데이터만 렌더링하도록 설계했고, 복습 관련 표시는 `contracts/expression-list-ui.md`에서 "아직 구현되지 않음"을 명시적으로 표시하도록 계약화했다. |
-| III | PASS | 스크립트 요소에 `tabIndex={0}`를 주면 키보드 사용자가 `Shift`+방향키로 선택할 수 있고, `getSelection()`이 그 선택도 똑같이 읽는다(R-002). 별도 UI 경로를 만들지 않고 FR-028을 충족한다. |
+| III | PASS (T029 후 개정) | 스크립트 요소에 `tabIndex={0}`를 주고 방향키를 `Selection.modify()`로 옮겨 선택을 만든다. `getSelection()`이 그 선택도 똑같이 읽는다(R-002). 처음 판정은 `tabIndex={0}`만으로 충분하다고 봤으나 Chromium 기본 설정에서 키보드 선택을 시작할 수 없음이 T029 S7-2에서 드러나 개정했다. 저장 수단의 포커스 이동(expression-sheet-ui 조항 10)도 함께 추가했다. |
 | IV | PASS | 최종 신규 의존성 0개. 중복 판정은 `trim()` + `normalize("NFC")` + 문자열 비교로 끝낸다(R-005). |
 | V | PASS | `useExpressions`의 상태를 `loading` / `ready` / `unavailable` 3가지로 두어, 저장소를 아직 읽지 않은 순간에 빈 상태가 잘못 보이는 것을 막았다(R-004). |
 | 기술 제약 | PASS | 신규 스타일은 `globals.css`에 시맨틱 클래스로 추가하고 기존 CSS 변수만 사용한다. |

@@ -27,6 +27,41 @@ export type UseTranscriptSelectionResult = {
   clear: () => void;
 };
 
+type SelectionModifier = Selection & {
+  modify(alter: "move" | "extend", direction: "forward" | "backward", granularity: string): void;
+};
+
+/**
+ * 방향키를 브라우저 선택으로 옮긴다. 처리했으면 `true` (R-002 개정, 조항 10).
+ *
+ * Chromium 은 캐럿 브라우징(F7)이 꺼져 있으면 `tabIndex={0}` 인 읽기 전용 텍스트에서
+ * 키보드로 선택을 시작하지 못한다. `Selection.modify()` 는 표준이 아니지만 Chromium ·
+ * Safari · Firefox 가 모두 지원하고, 읽기 전용 텍스트의 접힌 캐럿에서도 동작한다.
+ */
+function moveSelectionByKey(element: HTMLElement, event: KeyboardEvent): boolean {
+  const backward = event.key === "ArrowLeft" || event.key === "Home";
+  const lineBoundary = event.key === "Home" || event.key === "End";
+  if (!lineBoundary && event.key !== "ArrowLeft" && event.key !== "ArrowRight") return false;
+
+  const selection = window.getSelection() as SelectionModifier | null;
+  if (!selection || typeof selection.modify !== "function") return false;
+
+  // 선택이 스크립트 밖에 있거나 없으면 스크립트의 처음(뒤로 가는 키면 끝)에서 시작한다.
+  const inside =
+    selection.rangeCount > 0 && element.contains(selection.getRangeAt(0).commonAncestorContainer);
+  if (!inside) {
+    selection.selectAllChildren(element);
+    if (backward) selection.collapseToEnd();
+    else selection.collapseToStart();
+  }
+
+  const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
+  const wordKey = isMac ? event.altKey : event.ctrlKey;
+  const granularity = lineBoundary ? "lineboundary" : wordKey ? "word" : "character";
+  selection.modify(event.shiftKey ? "extend" : "move", backward ? "backward" : "forward", granularity);
+  return true;
+}
+
 /**
  * 스크립트 요소 안에서 일어난 글자 선택만 읽는다. UI 를 렌더링하지 않고 저장소를 다루지
  * 않으며 초안을 만들지 않는다 — 초안 생성은 호출자의 몫이다 (조항 9).
@@ -95,12 +130,23 @@ export function useTranscriptSelection({
     document.addEventListener("pointerup", read);
     document.addEventListener("keyup", read);
 
+    // 키보드로 선택을 만드는 쪽 (조항 10). 읽는 쪽은 위의 같은 경로를 탄다.
+    const element = transcriptRef.current;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (element && moveSelectionByKey(element, event)) {
+        event.preventDefault();
+        read();
+      }
+    };
+    element?.addEventListener("keydown", handleKeyDown);
+
     return () => {
       document.removeEventListener("selectionchange", read);
       document.removeEventListener("pointerup", read);
       document.removeEventListener("keyup", read);
+      element?.removeEventListener("keydown", handleKeyDown);
     };
-  }, [enabled, read]);
+  }, [enabled, read, transcriptRef]);
 
   /** 브라우저 선택도 함께 해제한다 (조항 7). */
   const clear = useCallback(() => {
