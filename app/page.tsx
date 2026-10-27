@@ -231,6 +231,7 @@ export default function TalklogApp() {
             reviews={reviews}
             onReview={() => { reviews.start(); go("review"); }}
             onRoom={() => go("room")}
+            onUpdate={expressions.update}
           />
         )}
         {screen === "review" && <ReviewSession reviews={reviews} onExit={() => go("home")} onRoom={() => go("room")} />}
@@ -579,6 +580,7 @@ function Cards({
   reviews,
   onReview,
   onRoom,
+  onUpdate,
 }: {
   status: UseExpressionsResult["status"];
   expressions: UseExpressionsResult["expressions"];
@@ -587,6 +589,7 @@ function Cards({
   reviews: UseReviewsResult;
   onReview: () => void;
   onRoom: () => void;
+  onUpdate: UseExpressionsResult["update"];
 }) {
   return <section className="screen cards-screen">
     <div className="eyebrow">나의 표현</div>
@@ -595,7 +598,7 @@ function Cards({
 
     <ReviewEntry reviews={reviews} onStart={onReview} onRoom={onRoom} />
 
-    <ExpressionList status={status} expressions={expressions} count={count} onRemove={onRemove} />
+    <ExpressionList status={status} expressions={expressions} count={count} onRemove={onRemove} onUpdate={onUpdate} />
   </section>;
 }
 

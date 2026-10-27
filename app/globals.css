@@ -112,6 +112,24 @@ h1 { font-size:30px; line-height:1.24; letter-spacing:-1.4px; margin-bottom:10px
 .review-pending{border:1px dashed #cfd6d2;border-radius:18px;padding:16px 18px;background:#f7f7f3}
 .review-pending strong{display:block;font-size:13px;color:var(--muted)}
 .review-pending p{margin:6px 0 0;font-size:11px;color:#8d9995;line-height:1.6}
+/* 005-expression-edit — 카드 항목 내부 편집. 기존 색상 변수만 사용한다. */
+.expression-edit-content{flex:1;min-width:0}
+.expression-edit-controls{display:flex;flex-direction:column;align-items:center;gap:8px;flex:none;margin-left:auto}
+.expression-edit-controls .expression-delete{margin-left:0}
+.expression-edit-toggle{border:1px solid var(--line);border-radius:10px;background:var(--cream);color:var(--green);font:inherit;font-size:11px;padding:8px}
+.expression-edit-form{display:grid;gap:6px;min-width:0;margin-bottom:12px}
+.expression-edit-form label{font-size:11px;color:var(--muted);font-weight:700}
+.expression-edit-form input,.expression-edit-form textarea{display:block;box-sizing:border-box;width:100%;min-width:0;max-width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--cream);color:var(--ink);font:inherit;font-size:13px;overflow-wrap:anywhere}
+.expression-edit-form textarea{resize:vertical}
+.expression-edit-actions{display:flex;flex-wrap:wrap;gap:8px}
+.expression-edit-actions button{flex:1;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--cream);color:var(--ink);font:inherit;font-size:12px}
+.expression-edit-actions button[type=submit]{background:var(--green);border-color:var(--green);color:var(--cream)}
+.expression-edit-controls button:disabled,.expression-edit-actions button:disabled{opacity:.5;cursor:not-allowed}
+.expression-edit-form :focus-visible,.expression-edit-controls button:focus-visible,.expression-count:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+.expression-card .expression-edit-error{margin:0;color:var(--coral);font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+.expression-edit-hint{font-size:11px;line-height:1.6;color:var(--muted)}
+.expression-edit-status{font-size:12px;color:var(--green);overflow-wrap:anywhere}
+.expression-edit-status:empty{margin:0}
 .expression-list-loading{min-height:120px}
 .expression-count{margin:24px 0 2px;font-size:10px;color:var(--muted);font-weight:800;letter-spacing:.6px}
 .expression-card{align-items:flex-start}
