@@ -115,3 +115,38 @@ h1 { font-size:30px; line-height:1.24; letter-spacing:-1.4px; margin-bottom:10px
 @media (min-width:700px){.app-shell{padding:28px 0}.phone-frame{min-height:900px;border-radius:34px}.bottom-nav{position:absolute;border-radius:0 0 34px 34px}.screen{min-height:746px}}
 @media (max-width:360px){.screen{padding-left:18px;padding-right:18px}.hero-card{padding:20px}.flip-card{height:370px}.flip-card .expression-term{font-size:30px}}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation:none!important}}
+
+/* 004-room-list — 기존 색상 변수만 사용하는 학습방 목록·개설 */
+.room-summary{margin:24px 0;border:1px solid var(--line);border-radius:20px;padding:18px;background:var(--cream)}
+.room-summary h2{font-size:17px;margin:0 0 12px}
+.room-open{display:flex;flex-direction:column;gap:8px;width:100%;min-width:0;border:0;border-radius:14px;padding:16px;text-align:left;background:var(--mint);color:var(--ink)}
+.room-summary .room-open+.room-open{margin-top:10px}
+.room-item-name{font-size:16px;font-weight:800;overflow-wrap:anywhere}
+.room-open>span:not(.room-item-name),.room-open small{font-size:11px;line-height:1.6;overflow-wrap:anywhere;color:var(--muted)}
+.room-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.room-actions button,.room-delete,.room-context button,.room-notice button{border:1px solid var(--line);border-radius:12px;background:var(--cream);padding:11px 13px;font-size:12px;font-weight:700}
+.room-actions button{flex:1;min-width:100px}
+.room-actions .room-primary{background:var(--green);color:var(--cream);border-color:var(--green)}
+.room-actions .room-danger{color:var(--coral);border-color:var(--coral)}
+.room-list{display:grid;gap:14px;margin-top:20px}
+.room-list-item{padding:12px;border:1px solid var(--line);border-radius:18px;min-width:0}
+.room-delete{display:block;margin:10px 0 0 auto;color:var(--coral)}
+.room-confirm{margin-top:12px;padding:14px;border:1px solid var(--coral);border-radius:14px;background:var(--cream);overflow-wrap:anywhere}
+.room-confirm strong{font-size:13px}
+.room-confirm p,.room-notice,.room-empty,.room-status{font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+.room-notice{color:var(--coral);margin:16px 0}
+.room-empty{padding:18px;background:var(--cream);border-radius:14px;color:var(--muted)}
+.room-status{color:var(--green)}
+.room-form{display:grid;gap:10px;margin-top:24px}
+.room-form label{font-size:13px;font-weight:700}
+.room-form input,.room-form select{width:100%;min-width:0;border:1px solid var(--line);border-radius:12px;padding:13px;font:inherit;color:var(--ink);background:var(--cream)}
+.room-form>p{font-size:12px;line-height:1.6;margin:0 0 12px}
+.room-form button:disabled{opacity:.5;cursor:not-allowed}
+.room-context{padding:0 20px 14px}
+.room-context p{font-size:11px;color:var(--muted);line-height:1.6}
+.room-screen>.room-empty{margin:0 20px 18px}
+.room-heading>div:not(.room-partner-avatar){min-width:0}
+.room-heading h1{overflow-wrap:anywhere}
+.room-heading p{line-height:1.6}
+.room-partner-avatar{width:42px;height:42px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--mint);color:var(--green);font-weight:800}
+.room-list-screen :focus-visible,.room-create-screen :focus-visible,.room-summary :focus-visible,.room-context button:focus-visible,.room-heading h1:focus{outline:2px solid var(--green);outline-offset:3px}
