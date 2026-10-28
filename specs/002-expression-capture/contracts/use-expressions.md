@@ -57,3 +57,6 @@ type SaveFailure = "invalid-term" | "invalid-meaning" | "duplicate" | "storage-u
     쓰지 않는다 (R-003).
 12. 저장소에서 읽은 값이 배열이 아니거나 필드가 깨져 있으면 그 항목을 버리고 나머지를
     쓴다. 전체를 버리거나 예외를 던져 화면을 멈추게 하지 않는다.
+13. `reload(): void`는 저장소를 다시 읽는다. 성공하면 `expressions`를 `savedAt` 내림차순으로
+    갱신하고 `status`를 `"ready"`로 바꾼다. 실패하면 기존 목록을 유지하고 `status`를
+    `"unavailable"`로 둔다. 첫 렌더의 loading 규칙과 기존 쓰기 동작은 유지한다.

@@ -88,3 +88,12 @@ export type SaveFailure =
   | "invalid-meaning"
   | "duplicate"
   | "storage-unavailable";
+
+/** 005: 예문·출처·식별자·저장 시각은 편집 입력으로 받지 않는다. */
+export type ExpressionUpdate = Pick<SavedExpression, "term" | "meaning">;
+
+export type UpdateFailure = SaveFailure | "not-found";
+
+export type UpdateResult =
+  | { ok: true; saved: SavedExpression }
+  | { ok: false; reason: UpdateFailure };

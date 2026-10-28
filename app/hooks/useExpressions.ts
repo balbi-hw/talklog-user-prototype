@@ -7,9 +7,17 @@ import {
   isValidTerm,
   normalizeTerm,
   readAll,
+  updateExpressionIn,
   writeAll,
 } from "../lib/expressions";
-import type { ExpressionDraft, SaveFailure, SavedExpression, StorageStatus } from "../lib/types";
+import type {
+  ExpressionDraft,
+  ExpressionUpdate,
+  SaveFailure,
+  SavedExpression,
+  StorageStatus,
+  UpdateResult,
+} from "../lib/types";
 
 /** specs/002-expression-capture/contracts/use-expressions.md */
 export type UseExpressionsResult = {
@@ -22,7 +30,9 @@ export type UseExpressionsResult = {
   save: (
     draft: ExpressionDraft,
   ) => { ok: true; saved: SavedExpression } | { ok: false; reason: SaveFailure };
+  reload: () => void;
   remove: (id: string) => boolean;
+  update: (id: string, changes: ExpressionUpdate) => UpdateResult;
 };
 
 /** 최근에 저장한 것이 먼저 온다 (FR-017). */
@@ -86,7 +96,7 @@ export function useExpressions(): UseExpressionsResult {
    * 첫 렌더의 `status` 는 항상 `"loading"` 이다 (조항 1). 저장소 읽기를 렌더 중에 하면
    * 서버 렌더 결과와 달라져 hydration 이 어긋난다 (R-004).
    */
-  useEffect(() => {
+  const reload = useCallback(() => {
     const result = readAll();
     if (!result.ok) {
       setStatus("unavailable");
@@ -96,6 +106,8 @@ export function useExpressions(): UseExpressionsResult {
     applyExpressions(sortByNewest(result.items));
     setStatus("ready");
   }, [applyExpressions]);
+
+  useEffect(() => { reload(); }, [reload]);
 
   /**
    * 렌더 중에 불러도 안전하도록 ref 가 아니라 상태를 읽는다. 화면은 "지금 보이는 목록"을
@@ -174,12 +186,37 @@ export function useExpressions(): UseExpressionsResult {
     [applyExpressions, readBaseForWrite],
   );
 
+  /** 005: 편집은 매번 최신 저장소를 읽어 외부 추가와 최신 출처 기록을 보존한다. */
+  const update = useCallback<UseExpressionsResult["update"]>(
+    (id, changes) => {
+      const base = readAll();
+      if (!base.ok) {
+        setStatus("unavailable");
+        return { ok: false, reason: "storage-unavailable" };
+      }
+      const result = updateExpressionIn(base.items, id, changes);
+      if (!result.ok) return result;
+      const next = sortByNewest(result.items);
+      if (!writeAll(next)) {
+        setStatus("unavailable");
+        return { ok: false, reason: "storage-unavailable" };
+      }
+      hasLoadedRef.current = true;
+      applyExpressions(next);
+      setStatus("ready");
+      return { ok: true, saved: result.saved };
+    },
+    [applyExpressions],
+  );
+
   return {
     status,
     expressions,
     count: expressions.length,
     findDuplicate,
+    reload,
     save,
     remove,
+    update,
   };
 }
