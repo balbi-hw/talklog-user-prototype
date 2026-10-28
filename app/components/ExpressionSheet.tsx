@@ -1,11 +1,10 @@
 "use client";
 
 import { isValidMeaning, isValidTerm, SAVE_FAILURE_MESSAGE } from "../lib/expressions";
+import { useId } from "react";
 import type { TranscriptSelection } from "../hooks/useTranscriptSelection";
 import type { ExpressionDraft, SaveFailure, SavedExpression, StorageStatus } from "../lib/types";
 
-const TERM_INPUT_ID = "expression-term-input";
-const MEANING_INPUT_ID = "expression-meaning-input";
 
 export type ExpressionSheetProps = {
   selection: TranscriptSelection | null;
@@ -45,6 +44,9 @@ export default function ExpressionSheet({
   onSave,
   onCancel,
 }: ExpressionSheetProps) {
+  const inputId = useId();
+  const TERM_INPUT_ID = `${inputId}-term`;
+  const MEANING_INPUT_ID = `${inputId}-meaning`;
   const isUnavailable = storageStatus === "unavailable";
 
   // 초안 있음 → 초안 편집. 초안 없고 선택 유효 → 저장 시작 수단.
