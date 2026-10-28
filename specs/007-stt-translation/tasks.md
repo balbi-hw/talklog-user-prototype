@@ -44,6 +44,10 @@
 - [x] T016 `README.md` 주요 기능·구현 범위·구조·환경변수 안내 동기화
 - [x] T017 `specs/007-stt-translation/quickstart.md`와 계약 기준 API 스모크·키 없는 build 확인, `tasks.md` 결과 기록
 
+## 검증 후속
+
+- [x] T018 `app/lib/server/understanding/http.ts`, `app/api/transcript/route.ts` — 브라우저 multipart boundary의 대소문자가 `Blob.type`에서 소문자로 바뀌어 실제 녹음 스크립트 요청이 400이던 결함(검증 F1) 수정. 원래 Content-Type 헤더로 파싱
+
 ## Dependencies & Execution Order
 
 T001→T002→T003~T005→US1→US2→US3→Polish. US2는 US1의 성공 스크립트에 의존한다.

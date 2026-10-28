@@ -35,7 +35,8 @@ export async function readBounded(request: Request, maximum: number): Promise<Bl
       chunks.push(new Uint8Array(value));
     }
   } finally { reader.releaseLock(); }
-  return new Blob(chunks, { type: request.headers.get("content-type") ?? "" });
+  // Blob.type은 소문자로 바뀌어 multipart boundary가 본문과 어긋난다. 형식은 원래 헤더로 넘긴다.
+  return new Blob(chunks);
 }
 
 // 전역 제한: 임의의 IP 헤더를 신뢰하지 않는다. 단일 프로세스에서만 유효하다.

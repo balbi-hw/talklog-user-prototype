@@ -9,7 +9,7 @@ export async function POST(request: Request) {
     if (!request.headers.get("content-type")?.toLowerCase().startsWith("multipart/form-data;")) throw new UnderstandingError("unsupported-format");
     const blob = await readBounded(request, MAX_VOICE_BYTES + 64 * 1024);
     let form: FormData;
-    try { form = await new Response(blob).formData(); }
+    try { form = await new Response(blob, { headers: { "content-type": request.headers.get("content-type") ?? "" } }).formData(); }
     catch { throw new UnderstandingError("invalid-input"); }
     const voice = form.get("voice");
     const language = form.get("language");
