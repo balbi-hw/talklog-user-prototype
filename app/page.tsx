@@ -2,9 +2,19 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import ExpressionList from "./components/ExpressionList";
+import HomeDate from "./components/HomeDate";
 import ExpressionSheet from "./components/ExpressionSheet";
 import Recorder from "./components/Recorder";
+import RoomList from "./components/RoomList";
+import RoomCreate from "./components/RoomCreate";
+import RoomSummary from "./components/RoomSummary";
+import { useRooms } from "./hooks/useRooms";
+import { MOCK_ROOM, roomName, type Room as LearningRoom, type RoomOverview } from "./lib/rooms";
 import VoiceBubble from "./components/VoiceBubble";
+import ReviewHome from "./components/ReviewHome";
+import ReviewEntry from "./components/ReviewEntry";
+import ReviewSession from "./components/ReviewSession";
+import { useReviews, type UseReviewsResult } from "./hooks/useReviews";
 import { useExpressions, type UseExpressionsResult } from "./hooks/useExpressions";
 import { useTranscriptSelection } from "./hooks/useTranscriptSelection";
 import { useVoicePlayback, PREVIEW_ID } from "./hooks/useVoicePlayback";
@@ -12,10 +22,7 @@ import { useVoiceRecorder, type SentRecording } from "./hooks/useVoiceRecorder";
 import { SAVE_FAILURE_MESSAGE } from "./lib/expressions";
 import type { ExpressionDraft, SaveFailure, VoiceMessage } from "./lib/types";
 
-type Screen = "home" | "room" | "feedback" | "cards" | "review";
-
-/** 학습방은 여전히 하나뿐이다. 표현의 출처로 저장한다 (FR-011). */
-const ROOM_NAME = "유키와 일본어 대화";
+type Screen = "home" | "rooms" | "room-create" | "room" | "feedback" | "cards" | "review";
 
 /**
  * 스크립트가 붙은 학습 짝의 예시 메시지 전체 텍스트. 표현의 예문으로 저장한다 (FR-010).
@@ -26,22 +33,21 @@ const ROOM_NAME = "유키와 일본어 대화";
 const PARTNER_TRANSCRIPT = "週末は何をして過ごしたの？";
 
 /**
- * Feedback 화면이 저장하는 표현. AI 문장 교정이 미구현이라 내용은 Mock 이지만
+ * Feedback 화면이 저장하는 표현. AI 문장 다듬기가 미구현이라 내용은 Mock 이지만
  * **저장 동작은 실제**여야 한다 (FR-024, data-model.md E13).
  */
 const FEEDBACK_EXPRESSION: ExpressionDraft = {
   term: "映画館で映画を見る",
   meaning: "영화관에서 영화를 보다",
   example: "週末は映画館で映画を見たよ。",
-  sourceRoom: ROOM_NAME,
+  sourceRoom: roomName(MOCK_ROOM),
 };
 
-const Icon = ({ name }: { name: "home" | "chat" | "cards" | "user" }) => {
+const Icon = ({ name }: { name: "home" | "chat" | "cards" }) => {
   const paths = {
     home: "M3 10.8 12 3l9 7.8V21a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1V10.8Z",
     chat: "M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v8Z",
     cards: "M6 3h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm3 5h6M9 12h6M9 16h4",
-    user: "M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z",
   };
   return <svg aria-hidden="true" viewBox="0 0 24 24"><path d={paths[name]} /></svg>;
 };
@@ -67,9 +73,29 @@ type ExpressionSaving = {
 
 export default function TalklogApp() {
   const [screen, setScreen] = useState<Screen>("home");
-  const [answer, setAnswer] = useState<"know" | "again" | null>(null);
   // 화면을 옮겨도 전송한 메시지가 유지되도록 대화 상태는 셸에서 소유한다.
-  const [messages, setMessages] = useState<VoiceMessage[]>(INITIAL_MESSAGES);
+  const rooms = useRooms();
+  const [selectedRoomId, setSelectedRoomId] = useState(MOCK_ROOM.id);
+  const [messagesByRoom, setMessagesByRoom] = useState<Record<string, VoiceMessage[]>>({ [MOCK_ROOM.id]: INITIAL_MESSAGES });
+  const [activityByRoom, setActivityByRoom] = useState<Record<string, number>>({});
+  const messagesRef = useRef(messagesByRoom);
+  messagesRef.current = messagesByRoom;
+  const selectedRoom = rooms.rooms.find((room) => room.id === selectedRoomId) ?? MOCK_ROOM;
+  const overviews: RoomOverview[] = [...rooms.rooms]
+    .sort((a, b) => (activityByRoom[b.id] ?? b.createdAt) - (activityByRoom[a.id] ?? a.createdAt) || a.id.localeCompare(b.id))
+    .map((room) => {
+      const messages = messagesByRoom[room.id] ?? [];
+      const sentAt = activityByRoom[room.id];
+      return { room, messageCount: messages.length,
+        lastMessageLabel: messages.length === 0 ? null : sentAt !== undefined
+          ? new Date(sentAt).toLocaleString("ko-KR") : "예시 오전 9:46" };
+    });
+
+  useEffect(() => () => {
+    Object.values(messagesRef.current).flat().forEach((message) => {
+      if (message.url) URL.revokeObjectURL(message.url);
+    });
+  }, []);
 
   /**
    * 표현 모음의 단일 소유자 (contracts/use-expressions.md). 저장은 `Room`·`Feedback`
@@ -77,15 +103,28 @@ export default function TalklogApp() {
    * 화면이 조건부 렌더링이라 `Room` 이 언마운트되면 화면 안에 둔 상태는 사라진다.
    */
   const expressions = useExpressions();
+  const reviews = useReviews(expressions);
   // 이동이 막힌 목적지. null 이 아니면 확인을 기다리는 중이다.
   const [blockedNav, setBlockedNav] = useState<Screen | null>(null);
 
   const pendingRef = useRef<PendingRecording>({ hasPending: false, discard: () => {} });
+  const phoneRef = useRef<HTMLDivElement>(null);
+  const focusAfterReview = useRef(false);
+  useEffect(() => {
+    if (!focusAfterReview.current) return;
+    const heading = phoneRef.current?.querySelector<HTMLElement>("section h1");
+    if (heading) { heading.tabIndex = -1; heading.focus(); }
+    focusAfterReview.current = false;
+  }, [screen]);
   const reportPending = useCallback((pending: PendingRecording) => {
     pendingRef.current = pending;
   }, []);
 
   const move = (next: Screen) => {
+    if (screen === "review" && next !== "review") {
+      reviews.end();
+      focusAfterReview.current = true;
+    }
     setScreen(next);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -111,35 +150,60 @@ export default function TalklogApp() {
     if (next) move(next);
   };
 
+  const openRoom = (id: string) => {
+    setSelectedRoomId(id);
+    go("room");
+  };
+
+  const removeRoom = (id: string): boolean => {
+    if (!rooms.remove(id)) return false;
+    (messagesByRoom[id] ?? []).forEach((message) => {
+      if (message.url) URL.revokeObjectURL(message.url);
+    });
+    setMessagesByRoom((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+    setActivityByRoom((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+    if (selectedRoomId === id) setSelectedRoomId(MOCK_ROOM.id);
+    return true;
+  };
+
   const addRecordedMessage = useCallback((recording: SentRecording) => {
-    setMessages((current) => [
-      ...current,
-      {
-        id: `r${Date.now()}`,
-        sender: "me",
-        durationMs: recording.durationMs,
-        sentAtLabel: timeLabel(),
-        source: "recorded",
-        url: recording.url,
-        readLabel: null,
-      },
-    ]);
-  }, []);
+    const sentAt = Date.now();
+    setMessagesByRoom((current) => ({ ...current, [selectedRoom.id]: [
+      ...(current[selectedRoom.id] ?? []),
+      { id: `r${sentAt}`, sender: "me", durationMs: recording.durationMs,
+        sentAtLabel: timeLabel(), source: "recorded", url: recording.url, readLabel: null },
+    ] }));
+    setActivityByRoom((current) => ({ ...current, [selectedRoom.id]: sentAt }));
+  }, [selectedRoom.id]);
 
   return (
     <main className="app-shell">
-      <div className="phone-frame">
+      <div className="phone-frame" ref={phoneRef}>
         <header className="topbar">
           <button className="brand" onClick={() => go("home")} aria-label="홈으로 이동">
             <span className="brand-mark">t</span><span>talklog</span>
           </button>
-          <button className="avatar" aria-label="내 프로필">민</button>
         </header>
 
-        {screen === "home" && <Home onOpenRoom={() => go("room")} onReview={() => go("review")} />}
+        {screen === "home" && <Home roomSummary={<RoomSummary items={overviews} status={rooms.status} onOpen={openRoom} onAll={() => go("rooms")} onCreate={() => go("room-create")} onReload={rooms.reload} />}
+          reviews={reviews} onOpenRoom={() => go("rooms")} onCards={() => go("cards")}
+          onReview={() => { reviews.start(); go("review"); }} />}
+        {screen === "rooms" && <RoomList items={overviews} status={rooms.status} onOpen={openRoom} onCreate={() => go("room-create")} onRemove={removeRoom} onReload={rooms.reload} />}
+        {screen === "room-create" && <RoomCreate status={rooms.status} onCreate={rooms.create} onCreated={(room) => openRoom(room.id)} onCancel={() => go("rooms")} />}
         {screen === "room" && (
           <Room
-            messages={messages}
+            key={selectedRoom.id}
+            room={selectedRoom}
+            onRooms={() => go("rooms")}
+            messages={messagesByRoom[selectedRoom.id] ?? []}
             onSendRecording={addRecordedMessage}
             onFeedback={() => go("feedback")}
             onPendingChange={reportPending}
@@ -163,15 +227,19 @@ export default function TalklogApp() {
             expressions={expressions.expressions}
             count={expressions.count}
             onRemove={expressions.remove}
+            reviews={reviews}
+            onReview={() => { reviews.start(); go("review"); }}
+            onRoom={() => go("room")}
+            onUpdate={expressions.update}
+            onReload={expressions.reload}
           />
         )}
-        {screen === "review" && <Review answer={answer} onAnswer={setAnswer} onDone={() => go("home")} />}
+        {screen === "review" && <ReviewSession reviews={reviews} onExit={() => go("home")} onRoom={() => go("room")} />}
 
         <nav className="bottom-nav" aria-label="주요 메뉴">
           <NavButton active={screen === "home"} icon="home" label="홈" onClick={() => go("home")} />
-          <NavButton active={screen === "room" || screen === "feedback"} icon="chat" label="대화" onClick={() => go("room")} />
+          <NavButton active={screen === "rooms" || screen === "room-create" || screen === "room" || screen === "feedback"} icon="chat" label="대화" onClick={() => go("rooms")} />
           <NavButton active={screen === "cards" || screen === "review"} icon="cards" label="카드" onClick={() => go("cards")} />
-          <NavButton active={false} icon="user" label="마이" onClick={() => {}} />
         </nav>
 
         {blockedNav && (
@@ -203,38 +271,23 @@ export default function TalklogApp() {
   );
 }
 
-function Home({ onOpenRoom, onReview }: { onOpenRoom: () => void; onReview: () => void }) {
+function Home({ roomSummary, onOpenRoom, onReview, onCards, reviews }: {
+  roomSummary: React.ReactNode; onOpenRoom: () => void; onReview: () => void; onCards: () => void; reviews: UseReviewsResult;
+}) {
   return <section className="screen home-screen">
-    <div className="eyebrow">7월 22일 수요일</div>
-    <h1>좋은 아침이에요, 민지님<span className="hello-dot">.</span></h1>
+    <HomeDate />
+    <h1>반가워요<span className="hello-dot">.</span></h1>
     <p className="lead">오늘도 한 문장씩, 가볍게 시작해볼까요?</p>
 
-    <button className="hero-card" onClick={onOpenRoom}>
-      <div className="live-chip"><span /> 새 메시지 2개</div>
-      <div className="hero-avatars"><span>유</span><span>민</span></div>
-      <div className="hero-copy">
-        <small>진행 중인 학습방</small>
-        <h2>유키와 일본어 대화</h2>
-        <p>“週末は何をして過ごしたの？”</p>
-      </div>
-      <div className="hero-footer"><span>일본어 · 12분 전</span><b>이어하기 →</b></div>
-    </button>
+    {roomSummary}
 
-    <div className="section-title"><div><span>오늘의 복습</span><h2>기억을 한번 꺼내볼까요?</h2></div><span className="count-pill">8장</span></div>
-    <button className="review-card" onClick={onReview}>
-      <div className="review-icon">あ</div>
-      <div><strong>오늘 복습할 카드</strong><p>약 3분이면 충분해요</p></div>
-      <span className="circle-arrow">→</span>
-    </button>
-
-    <div className="section-title compact"><div><span>최근 학습</span><h2>이번 주 기록</h2></div><button>전체 보기</button></div>
-    <div className="stats-card">
-      <div><strong>4</strong><span>대화한 날</span></div><div><strong>23</strong><span>저장한 표현</span></div><div><strong>86%</strong><span>복습 정답률</span></div>
-    </div>
+    <ReviewHome reviews={reviews} onStart={onReview} onRoom={onOpenRoom} onCards={onCards} />
   </section>;
 }
 
 function Room({
+  room,
+  onRooms,
   messages,
   onSendRecording,
   onFeedback,
@@ -243,11 +296,15 @@ function Room({
   findDuplicate,
   onSaveExpression,
 }: {
+  room: LearningRoom;
+  onRooms: () => void;
   messages: VoiceMessage[];
   onSendRecording: (recording: SentRecording) => void;
   onFeedback: () => void;
   onPendingChange: (pending: PendingRecording) => void;
 } & ExpressionSaving) {
+  const roomHeadingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => { roomHeadingRef.current?.focus(); }, []);
   const [showScript, setShowScript] = useState(false);
   const [showTranslation, setShowTranslation] = useState(false);
 
@@ -269,8 +326,8 @@ function Room({
   const { selection, clear } = useTranscriptSelection({
     transcriptRef,
     example: PARTNER_TRANSCRIPT,
-    sourceRoom: ROOM_NAME,
-    enabled: showScript,
+    sourceRoom: roomName(room),
+    enabled: showScript && room.id === MOCK_ROOM.id,
   });
 
   /** 스크립트를 닫으면 표현을 고를 수단 자체가 사라진다 (FR-006). 초안도 함께 버린다. */
@@ -362,16 +419,18 @@ function Room({
   };
 
   return <section className="screen room-screen">
-    <div className="room-heading"><div className="friend-avatar">유</div><div><h1>{ROOM_NAME}</h1><p><span /> 일본어 학습 중</p></div><button aria-label="더 보기">•••</button></div>
-    <div className="day-divider"><span>오늘</span></div>
+    <div className="room-heading"><div className="room-partner-avatar" aria-hidden="true">{Array.from(room.partner)[0]}</div><div><h1 ref={roomHeadingRef} tabIndex={-1}>{roomName(room)}</h1><p>학습 짝 {room.partner} · {room.language}{room.id === MOCK_ROOM.id ? " · 예시 학습방" : ""}</p></div></div>
+    <div className="room-context"><button onClick={onRooms}>← 학습방 목록</button><p>학습 짝에게 실제로 전달되지는 않아요. 녹음은 새로고침하면 사라져요.</p></div>
+    {messages.length === 0 && <p className="room-empty" role="status">아직 음성 메시지가 없어요. 첫 음성 메시지를 녹음해보세요. 스크립트·번역은 아직 준비 중이에요.</p>}
+    <div className="day-divider"><span>음성 메시지</span></div>
 
     {messages.map((message) => message.sender === "partner" ? (
       <div className="chat partner" key={message.id}>
-        <div className="mini-avatar">유</div>
+        <div className="mini-avatar">{Array.from(room.partner)[0]}</div>
         <div className="partner-message">
           {renderBubble(message)}
           {/* 스크립트·번역은 STT 가 붙은 예시 메시지에만 있다. 실제 녹음의 STT 는 범위 밖이다. */}
-          {message.source === "mock" && <>
+          {room.id === MOCK_ROOM.id && message.source === "mock" && <>
             <div className="detail-toggles">
               <button className={showScript ? "active" : ""} onClick={toggleScript} aria-expanded={showScript} aria-controls="partner-script">스크립트 <span>{showScript ? "⌃" : "⌄"}</span></button>
               <button className={showTranslation ? "active" : ""} onClick={() => setShowTranslation((visible) => !visible)} aria-expanded={showTranslation} aria-controls="partner-translation">번역 <span>{showTranslation ? "⌃" : "⌄"}</span></button>
@@ -425,7 +484,7 @@ function Room({
       </div>
     ))}
 
-    <button className="feedback-banner" onClick={onFeedback}><span className="spark">✦</span><div><strong>내 문장을 확인해볼까요?</strong><p>스크립트와 자연스러운 표현이 준비됐어요</p></div><b>→</b></button>
+    {room.id === MOCK_ROOM.id && <button className="feedback-banner" onClick={onFeedback}><span className="spark">✦</span><div><strong>내 문장을 확인해볼까요?</strong><p>스크립트와 자연스러운 표현이 준비됐어요</p></div><b>→</b></button>}
 
     <Recorder
       state={recorder.state}
@@ -486,7 +545,8 @@ function Feedback({
 
   return <section className="screen feedback-screen">
     <button className="back" onClick={onBack} aria-label="대화로 돌아가기">←</button>
-    <div className="eyebrow">AI 피드백</div><h1>잘 전달됐어요!<br/><span>조금 더 자연스럽게</span> 다듬어볼게요.</h1>
+    <div className="eyebrow">AI 피드백 · 예시</div><h1>잘 전달됐어요!<br/><span>조금 더 자연스럽게</span> 다듬어볼게요.</h1>
+    <p className="lead">아래 스크립트와 다듬은 문장은 예시예요. 실제 AI 분석은 준비 중이며, 카드 저장은 실제로 동작해요.</p>
     <div className="feedback-card original"><div className="card-label">내가 말한 문장</div><p>週末に映画館で映画を見ました。</p></div>
     <div className="connector-line" />
     <div className="feedback-card suggestion"><div className="card-label">✦ 더 자연스러운 표현</div><p>週末は映画館で映画を見たよ。</p><div className="why"><strong>왜 이렇게 바꿨나요?</strong><p>학습 짝과 나누는 편한 대화에서는 「〜ました」보다 「〜たよ」가 더 자연스러워요.</p></div></div>
@@ -517,40 +577,34 @@ function Cards({
   expressions,
   count,
   onRemove,
+  reviews,
+  onReview,
+  onRoom,
+  onUpdate,
+  onReload,
 }: {
   status: UseExpressionsResult["status"];
   expressions: UseExpressionsResult["expressions"];
   count: number;
   onRemove: (id: string) => void;
+  reviews: UseReviewsResult;
+  onReview: () => void;
+  onRoom: () => void;
+  onUpdate: UseExpressionsResult["update"];
+  onReload: () => void;
 }) {
+  const reload = () => { onReload(); reviews.refresh(); };
   return <section className="screen cards-screen">
     <div className="eyebrow">나의 표현</div>
     <h1>내 표현</h1>
     <p className="lead">대화에서 발견한 표현을 다시 만나보세요.</p>
 
-    {/* FR-026: 복습 서브도메인이 미구현이라 복습할 카드 수를 실제 값으로 바꿀 수 없다.
-        실제 값으로 바꿀 수 없는 표시는 지우고, 동작하는 것처럼 보이는 버튼도 남기지
-        않는다 (원칙 II). */}
-    <div className="review-pending">
-      <strong>복습은 아직 준비 중이에요</strong>
-      <p>저장한 표현으로 복습하는 기능은 아직 만들지 않았어요.</p>
-    </div>
+    <ReviewEntry reviews={reviews} onStart={onReview} onRoom={onRoom} onReload={reload} />
 
-    <ExpressionList status={status} expressions={expressions} count={count} onRemove={onRemove} />
+    <ExpressionList status={status} expressions={expressions} count={count} onRemove={onRemove} onUpdate={onUpdate} onReload={reload} />
   </section>;
 }
 
-function Review({ answer, onAnswer, onDone }: { answer: "know" | "again" | null; onAnswer: (a: "know" | "again") => void; onDone: () => void }) {
-  const [flipped, setFlipped] = useState(false);
-  return <section className="screen review-screen"><div className="review-top"><button onClick={onDone}>×</button><div className="progress"><i /></div><span>1 / 8</span></div><div className="eyebrow">오늘의 복습</div>
-    <button className={`flip-card ${flipped ? "flipped" : ""}`} onClick={() => setFlipped(true)}>
-      {!flipped ? <><small>이 표현을 기억하시나요?</small><div className="expression-term">映画館で<br/>映画を見る</div><span className="tap-hint">카드를 눌러 뜻 보기</span></> : <><small>뜻</small><div className="expression-meaning">영화관에서<br/>영화를 보다</div><div className="example"><span>대화 속 문장</span><p>週末は映画館で映画を見たよ。</p></div></>}
-    </button>
-    {flipped && !answer && <div className="answer-row"><button onClick={() => onAnswer("again")}><span>↻</span>다시 볼래요</button><button className="know" onClick={() => onAnswer("know")}><span>✓</span>알고 있어요</button></div>}
-    {answer && <div className="result-panel"><strong>{answer === "know" ? "멋져요, 기억하고 있네요!" : "괜찮아요, 한 번 더 만나면 돼요."}</strong><button onClick={onDone}>복습 마치기</button></div>}
-  </section>;
-}
-
-function NavButton({ active, icon, label, onClick }: { active: boolean; icon: "home" | "chat" | "cards" | "user"; label: string; onClick: () => void }) {
+function NavButton({ active, icon, label, onClick }: { active: boolean; icon: "home" | "chat" | "cards"; label: string; onClick: () => void }) {
   return <button className={active ? "active" : ""} onClick={onClick}><Icon name={icon} /><span>{label}</span></button>;
 }

@@ -1,7 +1,7 @@
 import type { MicrophoneStatus } from "./types";
 
 /**
- * 브라우저 오디오 유틸리티.
+ * 브라우저 음성 유틸리티.
  *
  * 이 파일의 함수는 모두 클라이언트에서만 호출해야 한다. 서버 렌더링 중에는
  * MediaRecorder·navigator가 없어 isRecordingSupported()가 false를 돌려주므로,

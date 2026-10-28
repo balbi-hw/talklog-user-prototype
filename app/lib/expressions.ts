@@ -3,7 +3,7 @@
 //
 // 저장소 접근과 순수 함수만 둔다. 상태 관리는 useExpressions 의 몫이다.
 
-import type { SaveFailure, SavedExpression } from "./types";
+import type { ExpressionUpdate, SaveFailure, SavedExpression, UpdateFailure } from "./types";
 
 /**
  * 실패 이유별 화면 문구 (contracts/expression-sheet-ui.md 조항 4).
@@ -17,6 +17,35 @@ export const SAVE_FAILURE_MESSAGE: Record<SaveFailure, string> = {
   duplicate: "이미 저장한 표현이에요",
   "storage-unavailable": "이 브라우저에서는 표현을 저장할 수 없어요",
 };
+
+export const UPDATE_FAILURE_MESSAGE: Record<UpdateFailure, string> = {
+  ...SAVE_FAILURE_MESSAGE,
+  "not-found": "이 표현이 저장소에 없어요. 편집을 취소하고 새로고침해주세요",
+};
+
+/** 005: 최신 저장소 배열을 입력으로 받아 두 필드만 교체한다. 입력 배열은 변경하지 않는다. */
+export function updateExpressionIn(
+  items: SavedExpression[],
+  id: string,
+  changes: ExpressionUpdate,
+):
+  | { ok: true; saved: SavedExpression; items: SavedExpression[] }
+  | { ok: false; reason: Exclude<UpdateFailure, "storage-unavailable"> } {
+  if (!isValidTerm(changes.term)) return { ok: false, reason: "invalid-term" };
+  if (!isValidMeaning(changes.meaning)) return { ok: false, reason: "invalid-meaning" };
+  const current = items.find((item) => item.id === id);
+  if (!current) return { ok: false, reason: "not-found" };
+  const normalized = normalizeTerm(changes.term);
+  if (items.some((item) => item.id !== id && normalizeTerm(item.term) === normalized)) {
+    return { ok: false, reason: "duplicate" };
+  }
+  const saved: SavedExpression = {
+    ...current,
+    term: changes.term.trim(),
+    meaning: changes.meaning.trim(),
+  };
+  return { ok: true, saved, items: items.map((item) => (item.id === id ? saved : item)) };
+}
 
 /**
  * 저장소 키는 하나이며 JSON 배열을 담는다 (계약 조항 11).

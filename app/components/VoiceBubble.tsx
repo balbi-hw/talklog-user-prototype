@@ -3,7 +3,7 @@
 import { formatDuration } from "../lib/audio";
 import type { VoiceMessage } from "../lib/types";
 
-/** 고정 막대 파형. 실제 오디오를 분석하지 않는다 (Constitution 원칙 IV). */
+/** 고정 막대 파형. 실제 음성을 분석하지 않는다 (Constitution 원칙 IV). */
 export const Wave = ({ light = false }: { light?: boolean }) => (
   <div className={`wave ${light ? "wave-light" : ""}`} aria-hidden="true">
     {[9, 18, 12, 24, 16, 29, 20, 13, 23, 17, 27, 14, 21, 11, 18, 8].map((h, i) => (
