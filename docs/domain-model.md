@@ -130,9 +130,11 @@ IV(최소 의존성)와도 부딪힌다. 필요해지면 이 문서를 개정하
 
 | 위치 | 현재 | 있어야 할 것 |
 |---|---|---|
-| `app/globals.css`, `app/page.tsx` | `.word-card`, `.jp-word`, `.ko-word`, `.word-index` | `.expression-card` 계열 |
-| `README.md` 주요 기능 | "단어 또는 표현" (draft.md 인용) | "표현" |
 | `draft.md` §5.6 | "단어와 문장 중 무엇을" | D-1로 해소됨. draft.md는 기획 초안이므로 수정하지 않고 이 문서가 우선한다 |
+
+`app/globals.css` · `app/page.tsx` 의 `.word-card` · `.word-index` · `.jp-word` ·
+`.ko-word` · `.flashcard` 와 `README.md` 의 "단어" · "플래시카드" 는
+`specs/002-expression-capture` (FR-027)에서 해소했다.
 
 ---
 
