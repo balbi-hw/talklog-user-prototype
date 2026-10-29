@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ExpressionList from "./components/ExpressionList";
 import HomeDate from "./components/HomeDate";
-import ExpressionSheet from "./components/ExpressionSheet";
+import MessageUnderstanding from "./components/MessageUnderstanding";
+import TranscriptCapture from "./components/TranscriptCapture";
+import { useMessageUnderstanding, type UseMessageUnderstandingResult } from "./hooks/useMessageUnderstanding";
 import Recorder from "./components/Recorder";
 import RoomList from "./components/RoomList";
 import RoomCreate from "./components/RoomCreate";
@@ -16,7 +18,6 @@ import ReviewEntry from "./components/ReviewEntry";
 import ReviewSession from "./components/ReviewSession";
 import { useReviews, type UseReviewsResult } from "./hooks/useReviews";
 import { useExpressions, type UseExpressionsResult } from "./hooks/useExpressions";
-import { useTranscriptSelection } from "./hooks/useTranscriptSelection";
 import { useVoicePlayback, PREVIEW_ID } from "./hooks/useVoicePlayback";
 import { useVoiceRecorder, type SentRecording } from "./hooks/useVoiceRecorder";
 import { SAVE_FAILURE_MESSAGE } from "./lib/expressions";
@@ -24,16 +25,10 @@ import type { ExpressionDraft, SaveFailure, VoiceMessage } from "./lib/types";
 
 type Screen = "home" | "rooms" | "room-create" | "room" | "feedback" | "cards" | "review";
 
-/**
- * 스크립트가 붙은 학습 짝의 예시 메시지 전체 텍스트. 표현의 예문으로 저장한다 (FR-010).
- *
- * 실제로 녹음한 내 음성에는 스크립트가 없다 — STT 가 미구현이므로 표현을 고를 수 있는
- * 것은 이 예시 스크립트뿐이다 (spec.md Assumptions).
- */
 const PARTNER_TRANSCRIPT = "週末は何をして過ごしたの？";
 
 /**
- * Feedback 화면이 저장하는 표현. AI 문장 다듬기가 미구현이라 내용은 Mock 이지만
+ * 예시 학습방의 Feedback 화면이 저장하는 표현. 이 화면의 내용은 Mock이며
  * **저장 동작은 실제**여야 한다 (FR-024, data-model.md E13).
  */
 const FEEDBACK_EXPRESSION: ExpressionDraft = {
@@ -102,6 +97,7 @@ export default function TalklogApp() {
    * 에서 일어나고 조회는 `Cards` 에서 일어나므로 세 화면의 공통 조상이 가져야 한다 —
    * 화면이 조건부 렌더링이라 `Room` 이 언마운트되면 화면 안에 둔 상태는 사라진다.
    */
+  const understanding = useMessageUnderstanding();
   const expressions = useExpressions();
   const reviews = useReviews(expressions);
   // 이동이 막힌 목적지. null 이 아니면 확인을 기다리는 중이다.
@@ -157,6 +153,7 @@ export default function TalklogApp() {
 
   const removeRoom = (id: string): boolean => {
     if (!rooms.remove(id)) return false;
+    understanding.remove((messagesByRoom[id] ?? []).map((message) => message.id));
     (messagesByRoom[id] ?? []).forEach((message) => {
       if (message.url) URL.revokeObjectURL(message.url);
     });
@@ -178,7 +175,7 @@ export default function TalklogApp() {
     const sentAt = Date.now();
     setMessagesByRoom((current) => ({ ...current, [selectedRoom.id]: [
       ...(current[selectedRoom.id] ?? []),
-      { id: `r${sentAt}`, sender: "me", durationMs: recording.durationMs,
+      { id: `r${crypto.randomUUID()}`, sender: "me", durationMs: recording.durationMs,
         sentAtLabel: timeLabel(), source: "recorded", url: recording.url, readLabel: null },
     ] }));
     setActivityByRoom((current) => ({ ...current, [selectedRoom.id]: sentAt }));
@@ -205,6 +202,7 @@ export default function TalklogApp() {
             onRooms={() => go("rooms")}
             messages={messagesByRoom[selectedRoom.id] ?? []}
             onSendRecording={addRecordedMessage}
+            understanding={understanding}
             onFeedback={() => go("feedback")}
             onPendingChange={reportPending}
             storageStatus={expressions.status}
@@ -290,6 +288,7 @@ function Room({
   onRooms,
   messages,
   onSendRecording,
+  understanding,
   onFeedback,
   onPendingChange,
   storageStatus,
@@ -300,6 +299,7 @@ function Room({
   onRooms: () => void;
   messages: VoiceMessage[];
   onSendRecording: (recording: SentRecording) => void;
+  understanding: UseMessageUnderstandingResult;
   onFeedback: () => void;
   onPendingChange: (pending: PendingRecording) => void;
 } & ExpressionSaving) {
@@ -311,79 +311,7 @@ function Room({
   const playback = useVoicePlayback();
   const recorder = useVoiceRecorder({ onSend: onSendRecording });
 
-  /**
-   * 스크립트가 붙은 학습 짝의 예시 메시지는 하나뿐이므로 ref 도 하나다
-   * (spec.md Assumptions — 실제 녹음에는 STT 가 없다).
-   */
-  const transcriptRef = useRef<HTMLParagraphElement>(null);
-
-  // 초안은 동시에 최대 1개다 (data-model.md §2). 저장 수단이 스크립트 블록에 붙어
-  // 있으므로 초안도 이 화면이 소유한다.
-  const [draft, setDraft] = useState<ExpressionDraft | null>(null);
-  const [saveError, setSaveError] = useState<SaveFailure | null>(null);
-  const [savedTerm, setSavedTerm] = useState<string | null>(null);
-
-  const { selection, clear } = useTranscriptSelection({
-    transcriptRef,
-    example: PARTNER_TRANSCRIPT,
-    sourceRoom: roomName(room),
-    enabled: showScript && room.id === MOCK_ROOM.id,
-  });
-
-  /** 스크립트를 닫으면 표현을 고를 수단 자체가 사라진다 (FR-006). 초안도 함께 버린다. */
-  const toggleScript = () => {
-    const next = !showScript;
-    setShowScript(next);
-    if (!next) {
-      setDraft(null);
-      setSaveError(null);
-      setSavedTerm(null);
-    }
-  };
-
-  const startDraft = () => {
-    if (!selection) return;
-    setDraft({
-      term: selection.text,
-      meaning: "",
-      example: selection.example,
-      sourceRoom: selection.sourceRoom,
-    });
-    setSaveError(null);
-    setSavedTerm(null);
-  };
-
-  /**
-   * 저장·취소하면 누른 버튼이 사라지므로 포커스를 스크립트로 돌려놓는다 (US1-4,
-   * expression-sheet-ui 조항 10).
-   */
-  const returnToTranscript = () => {
-    clear();
-    transcriptRef.current?.focus({ preventScroll: true });
-  };
-
-  /** 취소하면 아무것도 저장되지 않는다 (FR-013, E9). */
-  const cancelDraft = () => {
-    setDraft(null);
-    setSaveError(null);
-    returnToTranscript();
-  };
-
-  const submitDraft = () => {
-    if (!draft) return;
-    const result = onSaveExpression(draft);
-    if (!result.ok) {
-      // 실패하면 초안을 유지한다 — 적어둔 뜻을 잃게 해서는 안 된다 (FR-015, 원칙 II).
-      setSaveError(result.reason);
-      return;
-    }
-    setSavedTerm(result.saved.term);
-    setDraft(null);
-    setSaveError(null);
-    returnToTranscript();
-  };
-
-  const duplicateOf = draft ? findDuplicate(draft.term) : null;
+  const toggleScript = () => setShowScript((current) => !current);
 
   const isPreviewPlaying = playback.activeId === PREVIEW_ID;
 
@@ -421,7 +349,7 @@ function Room({
   return <section className="screen room-screen">
     <div className="room-heading"><div className="room-partner-avatar" aria-hidden="true">{Array.from(room.partner)[0]}</div><div><h1 ref={roomHeadingRef} tabIndex={-1}>{roomName(room)}</h1><p>학습 짝 {room.partner} · {room.language}{room.id === MOCK_ROOM.id ? " · 예시 학습방" : ""}</p></div></div>
     <div className="room-context"><button onClick={onRooms}>← 학습방 목록</button><p>학습 짝에게 실제로 전달되지는 않아요. 녹음은 새로고침하면 사라져요.</p></div>
-    {messages.length === 0 && <p className="room-empty" role="status">아직 음성 메시지가 없어요. 첫 음성 메시지를 녹음해보세요. 스크립트·번역은 아직 준비 중이에요.</p>}
+    {messages.length === 0 && <p className="room-empty" role="status">아직 음성 메시지가 없어요. 첫 음성 메시지를 녹음해보세요. 보낸 뒤 스크립트와 번역을 열 수 있어요.</p>}
     <div className="day-divider"><span>음성 메시지</span></div>
 
     {messages.map((message) => message.sender === "partner" ? (
@@ -429,7 +357,7 @@ function Room({
         <div className="mini-avatar">{Array.from(room.partner)[0]}</div>
         <div className="partner-message">
           {renderBubble(message)}
-          {/* 스크립트·번역은 STT 가 붙은 예시 메시지에만 있다. 실제 녹음의 STT 는 범위 밖이다. */}
+          {/* 고정 예시와 실제 녹음의 요청 경로를 구분한다. */}
           {room.id === MOCK_ROOM.id && message.source === "mock" && <>
             <div className="detail-toggles">
               <button className={showScript ? "active" : ""} onClick={toggleScript} aria-expanded={showScript} aria-controls="partner-script">스크립트 <span>{showScript ? "⌃" : "⌄"}</span></button>
@@ -437,40 +365,12 @@ function Room({
             </div>
             {showScript && <>
               <div id="partner-script" className="message-details">
-                <span>스크립트</span>
-                {/* tabIndex={0} 이 FR-028 의 핵심이다 — 포커스 가능한 텍스트 요소에서는
-                    Shift+방향키로 캐럿 선택이 되고 그 선택이 getSelection() 에 똑같이
-                    나타난다. 키보드 전용 선택 UI 를 따로 만들지 않는다 (R-002). */}
-                <p
-                  ref={transcriptRef}
-                  className="transcript"
-                  tabIndex={0}
-                  aria-label="스크립트. 배우고 싶은 부분을 골라 표현으로 저장할 수 있어요"
-                >
-                  {PARTNER_TRANSCRIPT}
-                </p>
+                <span>스크립트 · 예시</span>
+                <TranscriptCapture text={PARTNER_TRANSCRIPT} sourceRoom={roomName(room)}
+                  storageStatus={storageStatus} findDuplicate={findDuplicate} onSaveExpression={onSaveExpression} />
               </div>
-              <ExpressionSheet
-                selection={selection}
-                draft={draft}
-                duplicateOf={duplicateOf}
-                storageStatus={storageStatus}
-                saveError={saveError}
-                savedTerm={savedTerm}
-                onStart={startDraft}
-                onTermChange={(term) => {
-                  setDraft((current) => (current ? { ...current, term } : current));
-                  setSaveError(null);
-                }}
-                onMeaningChange={(meaning) => {
-                  setDraft((current) => (current ? { ...current, meaning } : current));
-                  setSaveError(null);
-                }}
-                onSave={submitDraft}
-                onCancel={cancelDraft}
-              />
             </>}
-            {showTranslation && <div id="partner-translation" className="message-details translation-detail"><span>번역</span><p>주말에는 무엇을 하며 보냈어?</p></div>}
+            {showTranslation && <div id="partner-translation" className="message-details translation-detail"><span>번역 · 예시</span><p>주말에는 무엇을 하며 보냈어?</p></div>}
           </>}
           <small>{message.sentAtLabel}</small>
         </div>
@@ -479,12 +379,14 @@ function Room({
       <div className="chat mine" key={message.id}>
         <div>
           {renderBubble(message)}
+          {message.source === "recorded" && <MessageUnderstanding message={message} room={room} understanding={understanding}
+            storageStatus={storageStatus} findDuplicate={findDuplicate} onSaveExpression={onSaveExpression} />}
           <small>{[message.readLabel, message.sentAtLabel].filter(Boolean).join(" · ")}</small>
         </div>
       </div>
     ))}
 
-    {room.id === MOCK_ROOM.id && <button className="feedback-banner" onClick={onFeedback}><span className="spark">✦</span><div><strong>내 문장을 확인해볼까요?</strong><p>스크립트와 자연스러운 표현이 준비됐어요</p></div><b>→</b></button>}
+    {room.id === MOCK_ROOM.id && <button className="feedback-banner" onClick={onFeedback}><span className="spark">✦</span><div><strong>내 문장을 확인해볼까요?</strong><p>예시 스크립트와 다듬은 문장을 확인해요</p></div><b>→</b></button>}
 
     <Recorder
       state={recorder.state}
@@ -546,7 +448,7 @@ function Feedback({
   return <section className="screen feedback-screen">
     <button className="back" onClick={onBack} aria-label="대화로 돌아가기">←</button>
     <div className="eyebrow">AI 피드백 · 예시</div><h1>잘 전달됐어요!<br/><span>조금 더 자연스럽게</span> 다듬어볼게요.</h1>
-    <p className="lead">아래 스크립트와 다듬은 문장은 예시예요. 실제 AI 분석은 준비 중이며, 카드 저장은 실제로 동작해요.</p>
+    <p className="lead">아래 스크립트와 다듬은 문장은 예시예요. 내가 보낸 음성 메시지에서는 스크립트 옆 문장 다듬기를 열 수 있어요. 카드 저장은 실제로 동작해요.</p>
     <div className="feedback-card original"><div className="card-label">내가 말한 문장</div><p>週末に映画館で映画を見ました。</p></div>
     <div className="connector-line" />
     <div className="feedback-card suggestion"><div className="card-label">✦ 더 자연스러운 표현</div><p>週末は映画館で映画を見たよ。</p><div className="why"><strong>왜 이렇게 바꿨나요?</strong><p>학습 짝과 나누는 편한 대화에서는 「〜ました」보다 「〜たよ」가 더 자연스러워요.</p></div></div>
