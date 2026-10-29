@@ -28,7 +28,7 @@ type Screen = "home" | "rooms" | "room-create" | "room" | "feedback" | "cards" |
 const PARTNER_TRANSCRIPT = "週末は何をして過ごしたの？";
 
 /**
- * Feedback 화면이 저장하는 표현. AI 문장 다듬기가 미구현이라 내용은 Mock 이지만
+ * 예시 학습방의 Feedback 화면이 저장하는 표현. 이 화면의 내용은 Mock이며
  * **저장 동작은 실제**여야 한다 (FR-024, data-model.md E13).
  */
 const FEEDBACK_EXPRESSION: ExpressionDraft = {
@@ -448,7 +448,7 @@ function Feedback({
   return <section className="screen feedback-screen">
     <button className="back" onClick={onBack} aria-label="대화로 돌아가기">←</button>
     <div className="eyebrow">AI 피드백 · 예시</div><h1>잘 전달됐어요!<br/><span>조금 더 자연스럽게</span> 다듬어볼게요.</h1>
-    <p className="lead">아래 스크립트와 다듬은 문장은 예시예요. 실제 AI 분석은 준비 중이며, 카드 저장은 실제로 동작해요.</p>
+    <p className="lead">아래 스크립트와 다듬은 문장은 예시예요. 내가 보낸 음성 메시지에서는 스크립트 옆 문장 다듬기를 열 수 있어요. 카드 저장은 실제로 동작해요.</p>
     <div className="feedback-card original"><div className="card-label">내가 말한 문장</div><p>週末に映画館で映画を見ました。</p></div>
     <div className="connector-line" />
     <div className="feedback-card suggestion"><div className="card-label">✦ 더 자연스러운 표현</div><p>週末は映画館で映画を見たよ。</p><div className="why"><strong>왜 이렇게 바꿨나요?</strong><p>학습 짝과 나누는 편한 대화에서는 「〜ました」보다 「〜たよ」가 더 자연스러워요.</p></div></div>

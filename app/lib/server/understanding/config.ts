@@ -1,5 +1,6 @@
 import "server-only";
-import type { TranscriptService, TranslationService } from "../../understanding";
+import type { RefinementService, TranscriptService, TranslationService } from "../../understanding";
+import { createClaudeRefinement, mockRefinement } from "./adapters/refinement";
 import { createOpenAITranscript } from "./adapters/openai";
 import { createClaudeTranslation } from "./adapters/claude";
 import { mockTranscript, mockTranslation } from "./adapters/mock";
@@ -19,4 +20,11 @@ export function translationService(): TranslationService {
   if (provider !== "claude" && provider !== "mock") throw new UnderstandingError("failed");
   if (provider === "mock" || !key) return mockTranslation;
   return createClaudeTranslation(key, process.env.TRANSLATION_MODEL?.trim() || "claude-haiku-5-5");
+}
+export function refinementService(): RefinementService {
+  const key = process.env.ANTHROPIC_API_KEY?.trim();
+  const provider = process.env.REFINEMENT_PROVIDER?.trim() || (key ? "claude" : "mock");
+  if (provider !== "claude" && provider !== "mock") throw new UnderstandingError("failed");
+  if (provider === "mock" || !key) return mockRefinement;
+  return createClaudeRefinement(key, process.env.REFINEMENT_MODEL?.trim() || "claude-haiku-5-5");
 }
