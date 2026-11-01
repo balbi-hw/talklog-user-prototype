@@ -1,5 +1,5 @@
 import "server-only";
-import type { UnderstandingErrorCode, UnderstandingResponse, UnderstandingResult } from "../../understanding";
+import type { UnderstandingErrorCode } from "../../understanding";
 
 export const MAX_VOICE_BYTES = 8 * 1024 * 1024;
 export class UnderstandingError extends Error {
@@ -43,7 +43,7 @@ export async function readBounded(request: Request, maximum: number): Promise<Bl
 let windowStart = Date.now();
 let count = 0;
 let active = 0;
-export async function handleUnderstanding(request: Request, work: (signal: AbortSignal) => Promise<UnderstandingResult>): Promise<Response> {
+export async function handleUnderstanding<T>(request: Request, work: (signal: AbortSignal) => Promise<T>): Promise<Response> {
   if (Date.now() - windowStart >= 60_000) { windowStart = Date.now(); count = 0; }
   if (count >= 20 || active >= 4) return respond({ ok: false, error: { code: "limit" } }, 429);
   count += 1;
@@ -63,7 +63,9 @@ export async function handleUnderstanding(request: Request, work: (signal: Abort
       }, 30_000);
     });
     const result = await Promise.race([work(controller.signal), deadline]);
-    return respond({ ok: true, result: { text: result.text.trim(), source: result.source } }, 200);
+    const normalized = result && typeof result === "object" && "text" in result && typeof result.text === "string"
+      ? { ...result, text: result.text.trim() } : result;
+    return respond({ ok: true, result: normalized }, 200);
   } catch (error) {
     const code = timedOut ? "timeout" : error instanceof UnderstandingError ? error.code
       : error instanceof TypeError ? "network" : "failed";
@@ -74,6 +76,6 @@ export async function handleUnderstanding(request: Request, work: (signal: Abort
     active -= 1;
   }
 }
-function respond(body: UnderstandingResponse, status: number) {
+function respond(body: unknown, status: number) {
   return Response.json(body, { status, headers: { "Cache-Control": "no-store", ...(status === 429 ? { "Retry-After": "60" } : {}) } });
 }

@@ -13,8 +13,8 @@ export type TranscriptSaving = {
 };
 
 /** 002 선택·저장 경로를 스크립트마다 재사용한다. */
-export default function TranscriptCapture({ text, sourceRoom, storageStatus, findDuplicate, onSaveExpression }: {
-  text: string; sourceRoom: string;
+export default function TranscriptCapture({ text, sourceRoom, label = "스크립트", storageStatus, findDuplicate, onSaveExpression }: {
+  text: string; sourceRoom: string; label?: string;
 } & TranscriptSaving) {
   const transcriptRef = useRef<HTMLParagraphElement>(null);
   const [draft, setDraft] = useState<ExpressionDraft | null>(null);
@@ -27,7 +27,7 @@ export default function TranscriptCapture({ text, sourceRoom, storageStatus, fin
   };
   return <>
     <p ref={transcriptRef} className="transcript" tabIndex={0}
-      aria-label="스크립트. 배우고 싶은 부분을 골라 표현으로 저장할 수 있어요">{text}</p>
+      aria-label={`${label}. 배우고 싶은 부분을 골라 표현으로 저장할 수 있어요`}>{text}</p>
     <ExpressionSheet
       selection={selection} draft={draft} duplicateOf={draft ? findDuplicate(draft.term) : null}
       storageStatus={storageStatus} saveError={saveError} savedTerm={savedTerm}
