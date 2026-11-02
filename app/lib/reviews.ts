@@ -1,4 +1,5 @@
 import { readAll as readExpressions } from "./expressions";
+import { DEVICE_KEYS, readRaw, writeRecords } from "./record-scope";
 import type { SavedExpression } from "./types";
 
 export type ReviewAnswer = "know" | "again";
@@ -9,7 +10,7 @@ export type ReviewRecord = {
   knownCount: number;
   answerCount: number;
 };
-export const REVIEW_STORAGE_KEY = "talklog.reviews";
+export const REVIEW_STORAGE_KEY = DEVICE_KEYS.reviews;
 
 export function localDate(date = new Date()): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -40,9 +41,14 @@ function isRecord(value: unknown): value is ReviewRecord {
 
 export function readReviews(expressions: SavedExpression[]):
   { ok: true; records: ReviewRecord[] } | { ok: false } {
-  let raw: string | null;
-  try { raw = window.localStorage.getItem(REVIEW_STORAGE_KEY); }
-  catch { return { ok: false }; }
+  return parseReviews(readRaw("reviews"), expressions);
+}
+
+/** 010: 기기 기록을 계정으로 가져올 때 다른 범위의 원본도 같은 규칙으로 읽는다. */
+export function parseReviews(read: { ok: true; raw: string | null } | { ok: false }, expressions: SavedExpression[]):
+  { ok: true; records: ReviewRecord[] } | { ok: false } {
+  if (!read.ok) return { ok: false };
+  const raw = read.raw;
   try {
     const parsed: unknown = raw === null ? [] : JSON.parse(raw);
     const ids = new Set(expressions.map((item) => item.id));
@@ -84,8 +90,7 @@ export function saveReviewAnswer(expressionId: string, answer: ReviewAnswer, tod
   }
   const record = scheduleAnswer(snapshot.records.find((item) => item.expressionId === expressionId), expressionId, answer, today);
   const records = [...snapshot.records.filter((item) => item.expressionId !== expressionId), record];
-  try { window.localStorage.setItem(REVIEW_STORAGE_KEY, JSON.stringify(records)); }
-  catch { return { ok: false, reason: "storage" } as const; }
+  if (!writeRecords("reviews", records)) return { ok: false, reason: "storage" } as const;
   return { ok: true, expressions: snapshot.expressions, records } as const;
 }
 

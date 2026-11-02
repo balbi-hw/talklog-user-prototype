@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { UseExpressionsResult } from "./useExpressions";
 import type { SavedExpression, StorageStatus } from "../lib/types";
+import { isRecordKey, isRecordScopeResolved, subscribeRecordScope } from "../lib/record-scope";
 import { advanceReview, localDate, readReviewSnapshot, reviewOverview, saveReviewAnswer,
   type ReviewAnswer, type ReviewRecord, type ReviewSessionState } from "../lib/reviews";
 
@@ -22,8 +23,9 @@ export function useReviews(source: UseExpressionsResult) {
   }, []);
 
   const refresh = useCallback(() => {
-    const snapshot = readReviewSnapshot();
     setToday(localDate());
+    if (!isRecordScopeResolved()) { setStatus("loading"); return false; }
+    const snapshot = readReviewSnapshot();
     if (!snapshot.ok) { setStatus("unavailable"); return false; }
     setExpressions(snapshot.expressions);
     setRecords(snapshot.records);
@@ -34,7 +36,7 @@ export function useReviews(source: UseExpressionsResult) {
   useEffect(() => {
     refresh();
     const onStorage = (event: StorageEvent) => {
-      if (event.key === null || event.key === "talklog.reviews" || event.key === "talklog.expressions") refresh();
+      if (isRecordKey(event.key, "reviews") || isRecordKey(event.key, "expressions")) refresh();
     };
     let timer: ReturnType<typeof setTimeout>;
     const atMidnight = () => {
@@ -45,7 +47,9 @@ export function useReviews(source: UseExpressionsResult) {
     atMidnight();
     window.addEventListener("focus", refresh);
     window.addEventListener("storage", onStorage);
-    return () => { clearTimeout(timer); window.removeEventListener("focus", refresh); window.removeEventListener("storage", onStorage); };
+    // 범위 변경·서버 수신 뒤 다시 읽는다. 진행 중인 세션에서 사라진 표현은 아래 효과가 건너뛴다.
+    const unsubscribe = subscribeRecordScope(refresh);
+    return () => { clearTimeout(timer); window.removeEventListener("focus", refresh); window.removeEventListener("storage", onStorage); unsubscribe(); };
   }, [refresh]);
 
   // 같은 탭의 상류 저장/삭제도 반영한다. 상류 훅의 저장 로직은 수정하지 않는다.

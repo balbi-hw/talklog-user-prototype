@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { UseAccountResult } from "../hooks/useAccount";
+import type { UseRecordSyncResult } from "../hooks/useRecordSync";
+import { syncMessage } from "./RecordSyncNotice";
 import {
   ACCOUNT_FAILURE_MESSAGE, DISPLAY_NAME_MAX, PASSWORD_MAX, PASSWORD_MIN,
   isValidDisplayName, isValidEmail, isValidPassword, type AccountFailure,
@@ -9,10 +11,11 @@ import {
 
 type Mode = "sign-in" | "sign-up";
 
-/** 로그인해도 기록이 옮겨지지 않는다는 사실 (FR-006, 원칙 II). */
-const LOCAL_DATA_NOTICE = "로그인해도 학습방·표현·카드는 아직 이 기기에만 저장돼요. 계정으로 옮기는 기능은 준비 중이에요.";
+/** 기록이 어디에 저장되는지 (010 FR-001·FR-002, 원칙 II). 녹음한 음성은 아직 서버에 올리지 않는다. */
+const SIGNED_OUT_NOTICE = "로그인하지 않으면 학습방·표현·카드·복습 기록은 이 기기에만 저장돼요.";
+const SIGNED_IN_NOTICE = "로그인한 동안 학습방·표현·카드·복습 기록은 계정에 저장돼요. 녹음한 음성은 아직 계정에 올라가지 않아요.";
 
-export default function AccountScreen({ account, onBack }: { account: UseAccountResult; onBack: () => void }) {
+export default function AccountScreen({ account, sync, onBack }: { account: UseAccountResult; sync: UseRecordSyncResult; onBack: () => void }) {
   const { state, confirmNotice, dismissConfirmNotice } = account;
   const headingRef = useRef<HTMLHeadingElement>(null);
   const previousStatus = useRef(state.status);
@@ -41,9 +44,10 @@ export default function AccountScreen({ account, onBack }: { account: UseAccount
 
     {state.status === "signed-out" && <AccountForm account={account} />}
 
-    {state.status === "signed-in" && <SignedIn account={account} name={state.user.displayName} email={state.user.email} />}
+    {state.status === "signed-in" && <SignedIn account={account} sync={sync} userId={state.user.id} name={state.user.displayName} email={state.user.email} />}
 
-    {state.status !== "unavailable" && <p className="account-local">{LOCAL_DATA_NOTICE}</p>}
+    {state.status === "signed-out" && <p className="account-local">{SIGNED_OUT_NOTICE}</p>}
+    {state.status === "signed-in" && <p className="account-local">{SIGNED_IN_NOTICE}</p>}
   </section>;
 }
 
@@ -126,8 +130,14 @@ function AccountForm({ account }: { account: UseAccountResult }) {
   </>;
 }
 
-function SignedIn({ account, name, email }: { account: UseAccountResult; name: string; email: string }) {
+function SignedIn({ account, sync, userId, name, email }: {
+  account: UseAccountResult; sync: UseRecordSyncResult; userId: string; name: string; email: string;
+}) {
   const [confirming, setConfirming] = useState(false);
+  const [importNotice, setImportNotice] = useState<string | null>(null);
+  const message = syncMessage(sync);
+  const deviceCount = sync.device.rooms + sync.device.expressions;
+  const pending = confirming ? sync.pendingFor(userId) : 0;
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<AccountFailure | null>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
@@ -143,10 +153,25 @@ function SignedIn({ account, name, email }: { account: UseAccountResult; name: s
       <div><strong>{name}</strong><p>{email}</p></div>
     </div>
     <p className="account-status" role="status">로그인했어요.</p>
+    {message && <div className={`account-sync ${message.tone}`}>
+      <p role="status">{message.text}</p>
+      {message.retry && <button type="button" className="account-secondary" onClick={sync.retry}>다시 시도</button>}
+    </div>}
+    {deviceCount > 0 && <div className="account-import">
+      <p>이 기기에 로그인 전 기록이 있어요 (학습방 {sync.device.rooms}개, 표현 {sync.device.expressions}개).</p>
+      <button type="button" className="account-secondary" onClick={() => {
+        const result = sync.importNow();
+        setImportNotice(result.ok
+          ? `학습방 ${result.rooms}개, 표현 ${result.expressions}개를 가져왔어요.${result.skipped ? ` 이미 있던 ${result.skipped}개는 건너뛰었어요.` : ""}`
+          : result.reason === "not-ready" ? "계정 기록을 아직 받아 오지 못했어요. 잠시 뒤 다시 시도해 주세요." : "기록을 읽거나 쓰지 못했어요.");
+      }}>계정으로 가져오기</button>
+      {importNotice && <p className="account-status" role="status">{importNotice}</p>}
+    </div>}
     {!confirming && <button type="button" ref={openRef} className="account-secondary" onClick={() => setConfirming(true)}>로그아웃</button>}
     {confirming && <div className="room-confirm account-confirm" role="group" aria-labelledby="account-logout-title"
       onKeyDown={(event) => { if (event.key === "Escape" && !busy) cancel(); }}>
-      <p id="account-logout-title"><strong>이 기기에서 로그아웃할까요?</strong><br />이 기기에 저장된 학습방·표현·카드는 그대로 남아요.</p>
+      <p id="account-logout-title"><strong>이 기기에서 로그아웃할까요?</strong><br />계정 기록은 계정에 남고, 다시 로그인하면 받아 와요. 로그인 전에 이 기기에 저장한 기록도 그대로 남아요.</p>
+      {pending > 0 && <p className="room-notice">아직 계정에 보내지 못한 변경이 {pending}건 있어요. 지금 로그아웃하면 이 변경은 사라져요.</p>}
       {failure && <p className="room-notice" role="alert">{ACCOUNT_FAILURE_MESSAGE[failure]}</p>}
       {busy && <p className="account-status" role="status">로그아웃하고 있어요.</p>}
       <div className="room-actions">
@@ -157,6 +182,8 @@ function SignedIn({ account, name, email }: { account: UseAccountResult; name: s
           const result = await account.signOut();
           setBusy(false);
           if (!result.ok) setFailure(result.reason);
+          // 공용 기기에 계정 사본을 남기지 않는다 (010 FR-009).
+          else sync.forget(userId);
         }}>로그아웃</button>
       </div>
     </div>}
