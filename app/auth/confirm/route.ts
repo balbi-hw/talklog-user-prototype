@@ -2,6 +2,7 @@ import type { EmailOtpType } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/utils/supabase/server";
+import { CONFIRM_TIMEOUT_MS, withDeadline } from "@/utils/supabase/timeout";
 
 const OTP_TYPES: readonly EmailOtpType[] = ["signup", "email", "invite", "magiclink", "recovery", "email_change"];
 
@@ -21,15 +22,15 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get("type") as EmailOtpType | null;
   try {
     if (code) {
-      const { error } = await supabase.auth.exchangeCodeForSession(code);
+      const { error } = await withDeadline(supabase.auth.exchangeCodeForSession(code), CONFIRM_TIMEOUT_MS);
       return done(error ? "confirm-failed" : "confirmed");
     }
     if (tokenHash && type && OTP_TYPES.includes(type)) {
-      const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
+      const { error } = await withDeadline(supabase.auth.verifyOtp({ type, token_hash: tokenHash }), CONFIRM_TIMEOUT_MS);
       return done(error ? "confirm-failed" : "confirmed");
     }
   } catch {
-    // 네트워크 실패도 확인 실패로 알린다.
+    // 네트워크 실패와 시간 초과도 확인 실패로 알린다.
   }
   return done("confirm-failed");
 }
