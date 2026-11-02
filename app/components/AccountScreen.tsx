@@ -16,6 +16,8 @@ export default function AccountScreen({ account, onBack }: { account: UseAccount
   const { state, confirmNotice, dismissConfirmNotice } = account;
   const headingRef = useRef<HTMLHeadingElement>(null);
   const previousStatus = useRef(state.status);
+  /** 누른 버튼이 사라지는 화면 전환에서 포커스를 제목으로 옮긴다 (FR-011). 제목은 늘 화면에 있다. */
+  const focusHeading = () => headingRef.current?.focus();
 
   // 로그인·로그아웃으로 폼이나 버튼이 사라지면 포커스를 제목으로 옮긴다.
   useEffect(() => {
@@ -29,7 +31,7 @@ export default function AccountScreen({ account, onBack }: { account: UseAccount
 
     {confirmNotice && <div className={`account-banner${confirmNotice === "confirmed" ? " done" : ""}`} role="status">
       <p>{confirmNotice === "confirmed" ? "이메일 확인을 마쳤어요." : ACCOUNT_FAILURE_MESSAGE[confirmNotice]}</p>
-      <button type="button" onClick={dismissConfirmNotice} aria-label="안내 닫기">닫기</button>
+      <button type="button" onClick={() => { dismissConfirmNotice(); focusHeading(); }} aria-label="안내 닫기">닫기</button>
     </div>}
 
     {state.status === "loading" && <p className="account-status" role="status">계정 상태를 확인하고 있어요.</p>}
@@ -39,7 +41,7 @@ export default function AccountScreen({ account, onBack }: { account: UseAccount
       <p className="account-status">로그인 없이도 모든 기능을 이 기기에서 그대로 쓸 수 있어요.</p>
     </>}
 
-    {state.status === "signed-out" && <AccountForm account={account} />}
+    {state.status === "signed-out" && <AccountForm account={account} onViewChange={focusHeading} />}
 
     {state.status === "signed-in" && <SignedIn account={account} name={state.user.displayName} email={state.user.email} />}
 
@@ -47,7 +49,7 @@ export default function AccountScreen({ account, onBack }: { account: UseAccount
   </section>;
 }
 
-function AccountForm({ account }: { account: UseAccountResult }) {
+function AccountForm({ account, onViewChange }: { account: UseAccountResult; onViewChange: () => void }) {
   const [mode, setMode] = useState<Mode>("sign-in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -72,7 +74,7 @@ function AccountForm({ account }: { account: UseAccountResult }) {
   if (sentTo) return <div className="account-sent" role="status">
     <p className="lead">확인 메일을 보냈어요.</p>
     <p className="account-status"><strong>{sentTo}</strong> 로 보낸 메일의 링크를 누르면 가입이 끝나요. 메일이 보이지 않으면 스팸함도 확인해 주세요.</p>
-    <button type="button" className="account-secondary" onClick={() => { setSentTo(null); switchMode("sign-in"); }}>로그인으로 돌아가기</button>
+    <button type="button" className="account-secondary" onClick={() => { setSentTo(null); switchMode("sign-in"); onViewChange(); }}>로그인으로 돌아가기</button>
   </div>;
 
   return <>
@@ -93,14 +95,18 @@ function AccountForm({ account }: { account: UseAccountResult }) {
       setBusy(false);
       if (!result.ok) { setFailure(result.reason); return; }
       setPassword("");
-      if (result.outcome === "confirmation-sent") setSentTo(email.trim());
+      if (result.outcome === "confirmation-sent") { setSentTo(email.trim()); onViewChange(); }
     }}>
       {signUp && <>
         <label htmlFor="account-name">표시 이름</label>
         <input id="account-name" autoComplete="nickname" value={displayName}
-          aria-invalid={touched && !nameOk} aria-describedby="account-name-help"
+          aria-invalid={touched && !nameOk}
+          aria-describedby={touched && !nameOk ? "account-name-error account-name-help" : "account-name-help"}
           onChange={(event) => { setDisplayName(event.target.value); setFailure(null); }} />
-        <p id="account-name-help">학습 짝에게 보일 이름이에요. 1~{DISPLAY_NAME_MAX}자로 적어 주세요.</p>
+        {touched && !nameOk && <p id="account-name-error" className="account-field-error">표시 이름을 확인해 주세요.</p>}
+        <p id="account-name-help" className={touched && !nameOk ? "account-field-error" : undefined}>
+          학습 짝에게 보일 이름이에요. 1~{DISPLAY_NAME_MAX}자로 적어 주세요.
+        </p>
       </>}
       <label htmlFor="account-email">이메일</label>
       <input id="account-email" type="email" autoComplete="email" inputMode="email" value={email}

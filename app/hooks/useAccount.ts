@@ -34,14 +34,16 @@ export function useAccount(): UseAccountResult {
   const [confirmNotice, setConfirmNotice] = useState<ConfirmNotice>(null);
 
   useEffect(() => {
-    const supabase = createClient();
-    if (!supabase) {
-      setState({ status: "unavailable" });
-      return;
-    }
     const account = new URL(window.location.href).searchParams.get("account");
     if (account === "confirmed") setConfirmNotice("confirmed");
     else if (account === "confirm-failed") setConfirmNotice("confirm-failed");
+    const supabase = createClient();
+    if (!supabase) {
+      // 키가 없는 빌드도 확인 링크 결과(/auth/confirm 이 confirm-failed 로 보냄)는 알리고 주소를 정리한다.
+      setState({ status: "unavailable" });
+      clearReturnParams();
+      return;
+    }
     // 리디렉션 주소가 허용 목록에 없으면 Supabase 는 Site URL(`/?code=`)로 돌려보낸다.
     // 브라우저 클라이언트가 그 code 를 스스로 교환하므로, 첫 세션 결과로 성공 여부만 알린다.
     const returnedWithCode = new URL(window.location.href).searchParams.has("code");

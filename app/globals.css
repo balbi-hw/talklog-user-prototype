@@ -297,6 +297,7 @@ h1 { font-size:30px; line-height:1.24; letter-spacing:-1.4px; margin-bottom:10px
 .account-status{color:var(--muted)}
 .account-local{margin-top:24px;padding:12px 14px;border-radius:12px;background:var(--cream);color:var(--muted)}
 .account-field-error{color:var(--coral);margin:0}
+.account-form input[aria-invalid="true"]{border-color:var(--coral)}
 .account-modes{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px;border-radius:14px;background:var(--color-f0f0eb)}
 .account-modes button{border:0;border-radius:11px;padding:10px;background:var(--transparent);color:var(--muted);font-size:13px;font-weight:700}
 .account-modes button[aria-pressed="true"]{background:var(--white);color:var(--green)}
