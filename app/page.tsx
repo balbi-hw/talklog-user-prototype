@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import AccountScreen from "./components/AccountScreen";
 import ExpressionList from "./components/ExpressionList";
 import HomeDate from "./components/HomeDate";
 import MessageUnderstanding from "./components/MessageUnderstanding";
@@ -11,6 +12,7 @@ import RoomList from "./components/RoomList";
 import RoomCreate from "./components/RoomCreate";
 import RoomSummary from "./components/RoomSummary";
 import { useRooms } from "./hooks/useRooms";
+import { useAccount } from "./hooks/useAccount";
 import { MOCK_ROOM, roomName, type Room as LearningRoom, type RoomOverview } from "./lib/rooms";
 import VoiceBubble from "./components/VoiceBubble";
 import ReviewHome from "./components/ReviewHome";
@@ -23,7 +25,7 @@ import { useVoiceRecorder, type SentRecording } from "./hooks/useVoiceRecorder";
 import { SAVE_FAILURE_MESSAGE } from "./lib/expressions";
 import type { ExpressionDraft, SaveFailure, VoiceMessage } from "./lib/types";
 
-type Screen = "home" | "rooms" | "room-create" | "room" | "feedback" | "cards" | "review";
+type Screen = "home" | "rooms" | "room-create" | "room" | "feedback" | "cards" | "review" | "account";
 
 const PARTNER_TRANSCRIPT = "週末は何をして過ごしたの？";
 
@@ -97,6 +99,9 @@ export default function TalklogApp() {
    * 에서 일어나고 조회는 `Cards` 에서 일어나므로 세 화면의 공통 조상이 가져야 한다 —
    * 화면이 조건부 렌더링이라 `Room` 이 언마운트되면 화면 안에 둔 상태는 사라진다.
    */
+  const account = useAccount();
+  // 확인 링크에서 돌아오면 결과 안내가 보이도록 계정 화면을 연다.
+  useEffect(() => { if (account.confirmNotice) setScreen("account"); }, [account.confirmNotice]);
   const understanding = useMessageUnderstanding();
   const expressions = useExpressions();
   const reviews = useReviews(expressions);
@@ -188,11 +193,17 @@ export default function TalklogApp() {
           <button className="brand" onClick={() => go("home")} aria-label="홈으로 이동">
             <span className="brand-mark">t</span><span>talklog</span>
           </button>
+          <button className="topbar-account" onClick={() => go("account")}
+            aria-label={account.state.status === "signed-in" ? `계정: ${account.state.user.displayName}` : "계정"}>
+            {account.state.status === "signed-in" ? account.state.user.displayName
+              : account.state.status === "signed-out" ? "로그인" : "계정"}
+          </button>
         </header>
 
         {screen === "home" && <Home roomSummary={<RoomSummary items={overviews} status={rooms.status} onOpen={openRoom} onAll={() => go("rooms")} onCreate={() => go("room-create")} onReload={rooms.reload} />}
           reviews={reviews} onOpenRoom={() => go("rooms")} onCards={() => go("cards")}
           onReview={() => { reviews.start(); go("review"); }} />}
+        {screen === "account" && <AccountScreen account={account} onBack={() => go("home")} />}
         {screen === "rooms" && <RoomList items={overviews} status={rooms.status} onOpen={openRoom} onCreate={() => go("room-create")} onRemove={removeRoom} onReload={rooms.reload} />}
         {screen === "room-create" && <RoomCreate status={rooms.status} onCreate={rooms.create} onCreated={(room) => openRoom(room.id)} onCancel={() => go("rooms")} />}
         {screen === "room" && (

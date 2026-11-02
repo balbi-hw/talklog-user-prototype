@@ -1,11 +1,14 @@
 import { createServerClient } from "@supabase/ssr";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
-export const createClient = (cookieStore: Awaited<ReturnType<typeof cookies>>) => {
-  return createServerClient(supabaseUrl!, supabaseKey!, {
+/** 키가 없는 환경에서는 null 이다. */
+export const createClient = (cookieStore: Awaited<ReturnType<typeof cookies>>): SupabaseClient | null => {
+  if (!supabaseUrl || !supabaseKey) return null;
+  return createServerClient(supabaseUrl, supabaseKey, {
     cookies: {
       getAll() {
         return cookieStore.getAll();

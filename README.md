@@ -23,6 +23,7 @@
 - 응답 즉시 저장, 간격 반복(1→2→4→최대 30일), 다시 볼 카드 한 번 재등장
 - 복습 완료 결과와 홈의 실제 표현 수·오늘 대상 수·누적 복습 정답률
 - 카드 목록 항목에서 표현·뜻 편집과 취소, 예문·출처·저장 순서 보존, 중복 검사와 저장 실패 후 재시도
+- 이메일·비밀번호 가입·로그인·로그아웃 (선택 사항, Supabase Auth). 로그인하지 않아도 모든 기능 사용 가능
 - 모바일 우선 반응형 레이아웃 및 키보드 접근성 속성
 
 ## 사용자 흐름
@@ -108,6 +109,15 @@ Git 저장소를 Vercel에 연결한 뒤 프로젝트를 가져오면 Next.js �
 음성·텍스트는 처리에 필요할 때 외부 제공자로 전송될 수 있습니다. 앱은 학습·평가용으로 보관하지 않습니다.
 결과는 메시지별 메모리에만 유지하며 새로고침 시 사라집니다. 검증 절차는 [007 quickstart](./specs/007-stt-translation/quickstart.md)와 [008 quickstart](./specs/008-sentence-refinement/quickstart.md)를 참고하세요.
 
+### 로그인(Supabase) 설정
+
+| 변수 | 역할 |
+| --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase 프로젝트 URL |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | 브라우저용 publishable 키 (secret 키는 넣지 않습니다) |
+
+둘 중 하나라도 비어 있으면 상단 "계정"이 로그인을 쓸 수 없다고 안내하고, 나머지 기능은 그대로 동작합니다. Supabase 대시보드 **Authentication → URL Configuration**에서 Site URL과 Redirect URLs(`<주소>/auth/confirm`)를 배포 주소에 맞춥니다. 검증 절차는 [009 quickstart](./specs/009-auth/quickstart.md)를 참고하세요.
+
 Vercel CLI를 사용하는 경우에는 프로젝트 루트에서 다음 명령을 실행합니다.
 
 ```bash
@@ -124,19 +134,24 @@ talklog/
 │  ├─ globals.css       # 전체 스타일과 반응형 레이아웃
 │  ├─ layout.tsx        # 문서 레이아웃과 메타데이터
 │  ├─ page.tsx          # 화면, 상태 및 사용자 상호작용
-│  ├─ api/             # transcript·translation 서버 Route Handler
+│  ├─ api/             # transcript·translation·refinement 서버 Route Handler
+│  ├─ auth/confirm/     # 가입 확인 메일 링크 처리 (Route Handler)
 │  ├─ components/       # Recorder, VoiceBubble,
 │  │                    #   ExpressionSheet, ExpressionList(목록·편집·삭제),
 │  │                    #   ReviewEntry, ReviewHome, ReviewSession, ReviewComplete,
 │  │                    #   RoomList, RoomCreate, RoomSummary, HomeDate(기기 로컬 날짜)
 │  │                    #   MessageUnderstanding, TranscriptCapture(메시지별 결과·표현 저장)
+│  │                    #   AccountScreen(로그인·가입·로그아웃)
 │  ├─ hooks/            # useVoiceRecorder, useVoicePlayback,
 │  │                    #   useExpressions, useTranscriptSelection, useReviews, useRooms
-│  │                    #   useMessageUnderstanding(요청·캐시·취소)
+│  │                    #   useMessageUnderstanding(요청·캐시·취소), useAccount(세션)
 │  └─ lib/              # 공유 타입(types.ts), 음성 처리 유틸리티(audio.ts),
 │                       #   표현 저장소(expressions.ts), 복습 저장소/스케줄(reviews.ts),
 │                       #   학습방 저장소(rooms.ts)
 │                       #   understanding.ts(제공자 독립 계약), server/understanding/(설정·어댑터)
+│                       #   account.ts(계정 상태·검증·오류 문구)
+├─ utils/supabase/      # 브라우저·서버·미들웨어용 Supabase 클라이언트
+├─ middleware.ts        # 요청마다 로그인 세션 갱신
 ├─ docs/                # 도메인 모델
 ├─ specs/               # 기능별 명세·계획·작업 (spec-driven development)
 ├─ .specify/            # spec-kit 설정과 프로젝트 헌법
@@ -156,7 +171,8 @@ talklog/
 - **문장 다듬기 (008)**: 내 녹음의 스크립트가 준비되면 메시지 안에서 처음 열 때 요청합니다. 다듬은 문장·짧은 한국어 이유·바꿀 것 없음·실제/예시 출처를 표시하고 오류별 안내·재시도를 제공합니다. 결과 전체/일부를 고르면 기존 표현 저장 경로를 사용하며 예문은 전체 다듬은 문장, 출처는 해당 학습방입니다. 스크립트 재요청 시 이전 결과를 취소·무효화합니다. 처리 중에도 재생·답장·스크립트 보기·표현 저장은 가능합니다. 입력 8,000자·JSON 64KiB·서버 30초 제한과 007의 전역 요청 카운터를 공유합니다. 앱은 학습·평가용으로 보관하지 않으며 요청 전 외부 전송 가능성을 알립니다.
 - **복습**: `talklog.reviews`에 기억 여부·다음 시점·누적 응답 수를 저장합니다. 기기 로컬 날짜를 기준으로 응답마다 저장하므로 중간에 나가도 기록이 남습니다. 완료 통계는 카드별 최종 응답, 누적 정답률은 재등장을 포함한 모든 응답 기준입니다. 홈은 실제 표현 수·복습 대상 수·누적 정답률을 표시하며, 데이터가 없는 대화한 날 통계는 제거했습니다.
 - **음성**: 실제 녹음·미리 듣기·재생과 전송 전 확인이 동작합니다. 녹음 메시지는 학습방별 브라우저 메모리에만 보관하므로 새로고침하면 사라집니다.
-- **공통 셸**: 홈 날짜는 기기의 로컬 날짜이며 자정과 탭 복귀 시 갱신됩니다. 인사는 시간 중립 문구입니다. 계정·설정이 없으므로 프로필·마이 메뉴는 제공하지 않습니다.
+- **공통 셸**: 홈 날짜는 기기의 로컬 날짜이며 자정과 탭 복귀 시 갱신됩니다. 인사는 시간 중립 문구입니다. 설정·프로필 메뉴는 제공하지 않습니다.
+- **로그인 (009)**: 상단 계정 버튼에서 이메일·비밀번호·표시 이름으로 가입하고 로그인·로그아웃합니다. 로그인은 선택이며 화면을 막지 않습니다. 확인 메일 켜짐/꺼짐을 모두 처리하고, 확인 링크 결과를 계정 화면에 알립니다. 입력 오류·처리 중·잘못된 자격 증명·이미 가입됨·확인 전·빈도 초과·시간 초과(15초)·네트워크 실패를 안내합니다. 로그아웃에는 확인 단계가 있습니다. **로그인해도 학습방·표현·카드는 아직 이 기기에만 저장**되며 화면에도 그렇게 알립니다.
 
 학습방 목록·개설·삭제는 실제로 동작합니다. 학습 짝 이름(1~20자)과 일본어·영어·중국어 중 학습 언어를 정해 개설하며, 학습방 정보는 `localStorage`의 `talklog.rooms`에 남습니다. 홈에는 최근 활동 순 최대 3개가 보이고, 대화 메뉴에서 전체 목록을 엽니다. 삭제에는 확인 단계가 있고 저장한 표현은 지우지 않습니다. 저장소 오류는 안내와 재시도를 제공하며 성공한 것처럼 표시하지 않습니다.
 
@@ -166,7 +182,7 @@ talklog/
 
 다음 기능은 미구현입니다. 예시 학습방의 AI 피드백은 고정 예시로 유지하며, 키 없는 개발용 어댑터 결과도 예시로 표시합니다.
 
-- 회원가입과 로그인
+- 학습 기록을 계정으로 옮기기·기기 간 동기화, 비밀번호 재설정·소셜 로그인·계정 삭제
 - 음성 메시지의 영속 업로드·서버 보관 (스크립트 요청용 임시 전송은 구현)
 - 알림, 학습 짝 초대 및 실시간 통신
 - 데이터베이스·학습 짝 메시지 수신

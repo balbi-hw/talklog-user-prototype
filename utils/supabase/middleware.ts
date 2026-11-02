@@ -25,8 +25,13 @@ export const updateSession = async (request: NextRequest) => {
     },
   });
 
-  // getUser()를 호출해야 만료된 토큰이 갱신되어 쿠키에 기록된다.
-  await supabase.auth.getUser();
+  // getClaims()가 토큰을 검증하고, 만료됐으면 갱신해 쿠키에 기록한다.
+  // Supabase에 닿지 못해도 페이지는 로그인 없이 열려야 하므로 실패를 삼킨다 (009 FR-007).
+  try {
+    await supabase.auth.getClaims();
+  } catch {
+    // 세션 갱신 실패는 로그아웃 상태와 같게 다룬다.
+  }
 
   return supabaseResponse;
 };
