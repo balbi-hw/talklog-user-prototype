@@ -18,7 +18,8 @@ import { parseRooms, type Room } from "./rooms";
 import type { SavedExpression } from "./types";
 
 export type SyncState = "idle" | "loading" | "syncing" | "offline" | "error";
-export type SyncStatus = { state: SyncState; pending: number };
+/** pending: 보낼 변경. rejected: 서버가 받아 주지 않는 변경 — 이 기기 사본에만 남는다. */
+export type SyncStatus = { state: SyncState; pending: number; rejected: number };
 
 type Op = { seq: number; collection: RecordCollection; kind: "upsert" | "delete"; id: string; item?: unknown };
 
@@ -26,7 +27,7 @@ const TABLE: Record<RecordCollection, string> = { rooms: "rooms", expressions: "
 const ID_COLUMN: Record<RecordCollection, string> = { rooms: "id", expressions: "id", reviews: "expression_id" };
 const RETRY_MS = { offline: 15_000, error: 60_000 };
 
-let status: SyncStatus = { state: "idle", pending: 0 };
+let status: SyncStatus = { state: "idle", pending: 0, rejected: 0 };
 const statusListeners = new Set<() => void>();
 let activeUser: string | null = null;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -34,6 +35,10 @@ let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let flushing = false;
 let pulling = false;
 let lastPullAttempt = 0;
+// 받아 오기와 보내기는 겹치지 않게 한다. 받아 온 값은 요청 시점의 것이라, 그 사이 보내기가 대기열을 비우면
+// 방금 보낸 변경이 다시 얹히지 않아 사라지거나(만들기) 되살아난다(지우기).
+let pullAfterFlush = false;
+let flushAfterPull = false;
 
 function setStatus(next: Partial<SyncStatus>) {
   status = { ...status, ...next };
@@ -57,9 +62,9 @@ function idOf(collection: RecordCollection, item: unknown): string | null {
 
 // ── 대기열 ────────────────────────────────────────────────────────────────
 
-function readOutbox(userId: string): Op[] {
+function readOps(userId: string, name: "outbox" | "rejected"): Op[] {
   try {
-    const parsed: unknown = JSON.parse(window.localStorage.getItem(accountKey(userId, "outbox")) ?? "[]");
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(accountKey(userId, name)) ?? "[]");
     if (!Array.isArray(parsed)) return [];
     return parsed.filter((op): op is Op => !!op && typeof op === "object" &&
       typeof (op as Op).seq === "number" && RECORD_COLLECTIONS.includes((op as Op).collection) &&
@@ -69,18 +74,24 @@ function readOutbox(userId: string): Op[] {
   }
 }
 
-function writeOutbox(userId: string, ops: Op[]): boolean {
+const readOutbox = (userId: string) => readOps(userId, "outbox");
+const readRejected = (userId: string) => readOps(userId, "rejected");
+
+function writeOps(userId: string, name: "outbox" | "rejected", ops: Op[]): boolean {
   try {
-    window.localStorage.setItem(accountKey(userId, "outbox"), JSON.stringify(ops));
-    if (userId === activeUser) setStatus({ pending: ops.length });
+    window.localStorage.setItem(accountKey(userId, name), JSON.stringify(ops));
+    if (userId === activeUser) setStatus(name === "outbox" ? { pending: ops.length } : { rejected: ops.length });
     return true;
   } catch {
     return false;
   }
 }
 
+const writeOutbox = (userId: string, ops: Op[]) => writeOps(userId, "outbox", ops);
+
+/** 로그아웃하면 사라지는 변경 수. 보낼 변경과 서버가 받아 주지 않은 변경을 함께 센다. */
 export function pendingCount(userId: string): number {
-  return readOutbox(userId).length;
+  return readOutbox(userId).length + readRejected(userId).length;
 }
 
 /** 같은 항목의 변경은 마지막 것만 남긴다. */
@@ -92,6 +103,11 @@ function enqueue(userId: string, ops: Omit<Op, "seq">[]) {
   const incoming = new Set(ops.map(keyOf));
   const next = [...outbox.filter((op) => !incoming.has(keyOf(op))), ...ops.map((op) => ({ ...op, seq: ++seq }))];
   writeOutbox(userId, next);
+  // 거부됐던 항목을 다시 고쳤으면 새 변경으로 다시 보낸다.
+  const rejected = readRejected(userId);
+  if (rejected.some((op) => incoming.has(keyOf(op)))) {
+    writeOps(userId, "rejected", rejected.filter((op) => !incoming.has(keyOf(op))));
+  }
 }
 
 function onWrite(userId: string, collection: RecordCollection, previous: unknown[], next: unknown[]) {
@@ -153,6 +169,12 @@ const SELECT: Record<RecordCollection, string> = {
   reviews: "expression_id,due_date,interval_days,known_count,answer_count",
 };
 
+/** 값이 테이블 제약을 어겨 다시 보내도 받아 주지 않는 오류 (Postgres 22xxx 데이터 예외, 23xxx 무결성 위반). */
+function isRejection(error: unknown): boolean {
+  const code = error && typeof error === "object" ? (error as { code?: unknown }).code : undefined;
+  return typeof code === "string" && /^2[23]/.test(code);
+}
+
 function isNetworkError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const { name, message, code } = error as { name?: string; message?: string; code?: string };
@@ -178,6 +200,7 @@ function applyOps<T>(collection: RecordCollection, items: T[], ops: Op[]): T[] {
 async function pull(userId: string): Promise<boolean> {
   const supabase = createClient();
   if (!supabase || pulling) return false;
+  if (flushing) { pullAfterFlush = true; return false; }
   pulling = true;
   lastPullAttempt = Date.now();
   if (status.state !== "syncing") setStatus({ state: "loading" });
@@ -187,16 +210,19 @@ async function pull(userId: string): Promise<boolean> {
     const failed = results.find((result) => result.error);
     if (failed?.error) throw failed.error;
     if (activeUser !== userId) return false;
+    // 응답을 기다리는 동안 쌓인 변경까지 읽는다. 받아 주지 않은 변경도 이 기기 사본에는 남긴다.
     const outbox = readOutbox(userId);
+    const local = [...readRejected(userId), ...outbox];
     RECORD_COLLECTIONS.forEach((collection, index) => {
       const rows = (results[index].data ?? []) as unknown as Record<string, unknown>[];
-      const items = applyOps(collection, rows.map((row) => fromRow(collection, row)), outbox);
+      const items = applyOps(collection, rows.map((row) => fromRow(collection, row)), local);
       window.localStorage.setItem(accountKey(userId, collection), JSON.stringify(items));
     });
     window.localStorage.setItem(accountKey(userId, "loaded"), String(Date.now()));
     setRecordScope({ kind: "account", userId, loaded: true });
     notifyRecordsChanged();
     setStatus({ state: "idle", pending: outbox.length });
+    flushAfterPull = false;
     if (outbox.length) scheduleFlush(0);
     return true;
   } catch (error) {
@@ -207,6 +233,12 @@ async function pull(userId: string): Promise<boolean> {
     return false;
   } finally {
     pulling = false;
+    // 받아 오는 동안 미뤄 둔 보내기. 받아 오기가 실패해도 이미 받아 둔 사본이 있으면 보낼 수 있다.
+    const scope = getRecordScope();
+    if (flushAfterPull && activeUser === userId && scope.kind === "account" && scope.loaded) {
+      flushAfterPull = false;
+      scheduleFlush(0);
+    }
   }
 }
 
@@ -217,23 +249,36 @@ function scheduleFlush(delay = 400) {
   flushTimer = setTimeout(() => { void flush(); }, delay);
 }
 
-async function sendOps(supabase: SupabaseClient, userId: string, ops: Op[]) {
-  // 삭제 먼저, 그다음 갱신. 같은 항목은 대기열에서 이미 하나로 합쳐졌다.
-  for (const collection of RECORD_COLLECTIONS) {
-    const deletes = ops.filter((op) => op.collection === collection && op.kind === "delete").map((op) => op.id);
-    if (deletes.length) {
-      const { error } = await withTimeout(Promise.resolve(
-        supabase.from(TABLE[collection]).delete().eq("user_id", userId).in(ID_COLUMN[collection], deletes)));
-      if (error) throw error;
-    }
-  }
-  for (const collection of RECORD_COLLECTIONS) {
-    const rows = ops.filter((op) => op.collection === collection && op.kind === "upsert")
-      .map((op) => toRow(userId, collection, op.item));
-    if (rows.length) {
-      const { error } = await withTimeout(Promise.resolve(
-        supabase.from(TABLE[collection]).upsert(rows, { onConflict: `user_id,${ID_COLUMN[collection]}` })));
-      if (error) throw error;
+type Progress = { sent: Op[]; rejected: Op[] };
+
+async function sendGroup(supabase: SupabaseClient, userId: string, collection: RecordCollection, kind: Op["kind"], ops: Op[]) {
+  const table = supabase.from(TABLE[collection]);
+  const request = kind === "delete"
+    ? table.delete().eq("user_id", userId).in(ID_COLUMN[collection], ops.map((op) => op.id))
+    : table.upsert(ops.map((op) => toRow(userId, collection, op.item)), { onConflict: `user_id,${ID_COLUMN[collection]}` });
+  const { error } = await withTimeout(Promise.resolve(request));
+  return error;
+}
+
+/**
+ * 삭제 먼저, 그다음 갱신. 같은 항목은 대기열에서 이미 하나로 합쳐졌다.
+ * 보낸 것과 거부된 것을 progress 에 남긴다 — 중간에 연결이 끊겨도 이미 보낸 변경은 대기열에서 뺀다.
+ */
+async function sendOps(supabase: SupabaseClient, userId: string, ops: Op[], progress: Progress) {
+  for (const kind of ["delete", "upsert"] as const) {
+    for (const collection of RECORD_COLLECTIONS) {
+      const group = ops.filter((op) => op.collection === collection && op.kind === kind);
+      if (!group.length) continue;
+      const error = await sendGroup(supabase, userId, collection, kind, group);
+      if (!error) { progress.sent.push(...group); continue; }
+      if (!isRejection(error)) throw error;
+      // 한 항목이 제약을 어기면 묶음 전체가 거부된다. 하나씩 보내 받아 주지 않는 항목만 가려낸다.
+      for (const op of group) {
+        const single = await sendGroup(supabase, userId, collection, kind, [op]);
+        if (!single) progress.sent.push(op);
+        else if (isRejection(single)) progress.rejected.push(op);
+        else throw single;
+      }
     }
   }
 }
@@ -242,29 +287,48 @@ export async function flush(): Promise<boolean> {
   const userId = activeUser;
   const supabase = createClient();
   if (!userId || !supabase || flushing) return false;
+  if (pulling) { flushAfterPull = true; return false; }
   const ops = readOutbox(userId);
   if (!ops.length) { setStatus({ state: "idle", pending: 0 }); return true; }
   flushing = true;
   setStatus({ state: "syncing", pending: ops.length });
+  const progress: Progress = { sent: [], rejected: [] };
+  let failure: unknown = null;
   try {
-    await sendOps(supabase, userId, ops);
-    // 보내는 동안 새로 쌓인 변경(같은 항목이면 seq 가 바뀐다)은 남긴다.
-    const sent = new Set(ops.map((op) => op.seq));
-    const rest = readOutbox(userId).filter((op) => !sent.has(op.seq));
-    writeOutbox(userId, rest);
-    setStatus({ state: "idle", pending: rest.length });
-    if (rest.length) scheduleFlush(0);
-    return true;
+    await sendOps(supabase, userId, ops, progress);
   } catch (error) {
-    const kind = isNetworkError(error) ? "offline" : "error";
-    if (activeUser === userId) {
-      setStatus({ state: kind, pending: readOutbox(userId).length });
-      scheduleRetry(kind, userId, () => { void flush(); });
-    }
-    return false;
+    failure = error;
   } finally {
     flushing = false;
   }
+
+  // 로그아웃했거나 다른 계정으로 바뀌었으면 그 사용자의 사본을 다시 만들지 않는다.
+  if (activeUser === userId) {
+    // 보내는 동안 새로 쌓인 변경(같은 항목이면 seq 가 바뀐다)은 남긴다.
+    const settled = new Set([...progress.sent, ...progress.rejected].map((op) => op.seq));
+    const rest = readOutbox(userId).filter((op) => !settled.has(op.seq));
+    writeOutbox(userId, rest);
+    if (progress.rejected.length) {
+      const keyOf = (op: Op) => `${op.collection}:${op.id}`;
+      const newer = new Set(rest.map(keyOf));
+      const rejected = progress.rejected.filter((op) => !newer.has(keyOf(op)));
+      const replaced = new Set(rejected.map(keyOf));
+      writeOps(userId, "rejected", [...readRejected(userId).filter((op) => !replaced.has(keyOf(op))), ...rejected]);
+    }
+    if (failure) {
+      const kind = isNetworkError(failure) ? "offline" : "error";
+      setStatus({ state: kind });
+      scheduleRetry(kind, userId, () => { void flush(); });
+    } else {
+      setStatus({ state: "idle" });
+      if (rest.length) scheduleFlush(0);
+    }
+  }
+  if (pullAfterFlush) {
+    pullAfterFlush = false;
+    if (activeUser) void pull(activeUser);
+  }
+  return activeUser === userId && !failure;
 }
 
 // ── 시작·끝 ───────────────────────────────────────────────────────────────
@@ -275,7 +339,7 @@ export function startAccountRecords(userId: string) {
   activeUser = userId;
   let loaded = false;
   try { loaded = window.localStorage.getItem(accountKey(userId, "loaded")) !== null; } catch { loaded = false; }
-  setStatus({ state: "loading", pending: readOutbox(userId).length });
+  setStatus({ state: "loading", pending: readOutbox(userId).length, rejected: readRejected(userId).length });
   setRecordScope({ kind: "account", userId, loaded });
   void pull(userId);
 }
@@ -285,7 +349,7 @@ export function switchToDeviceRecords() {
   activeUser = null;
   if (flushTimer) clearTimeout(flushTimer);
   if (retryTimer) clearTimeout(retryTimer);
-  setStatus({ state: "idle", pending: 0 });
+  setStatus({ state: "idle", pending: 0, rejected: 0 });
   setRecordScope({ kind: "device" });
 }
 

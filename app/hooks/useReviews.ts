@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { UseExpressionsResult } from "./useExpressions";
 import type { SavedExpression, StorageStatus } from "../lib/types";
-import { isRecordKey, isRecordScopeResolved, subscribeRecordScope } from "../lib/record-scope";
+import { isRecordKey, isRecordScopeReady, subscribeRecordScope } from "../lib/record-scope";
 import { advanceReview, localDate, readReviewSnapshot, reviewOverview, saveReviewAnswer,
   type ReviewAnswer, type ReviewRecord, type ReviewSessionState } from "../lib/reviews";
 
@@ -24,7 +24,8 @@ export function useReviews(source: UseExpressionsResult) {
 
   const refresh = useCallback(() => {
     setToday(localDate());
-    if (!isRecordScopeResolved()) { setStatus("loading"); return false; }
+    // 010: 계정 기록을 받아 오기 전에는 이전 범위(기기)의 표현·복습 기록을 남기지 않는다.
+    if (!isRecordScopeReady()) { setExpressions([]); setRecords([]); setStatus("loading"); return false; }
     const snapshot = readReviewSnapshot();
     if (!snapshot.ok) { setStatus("unavailable"); return false; }
     setExpressions(snapshot.expressions);

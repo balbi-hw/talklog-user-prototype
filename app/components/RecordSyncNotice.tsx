@@ -19,6 +19,9 @@ export function syncMessage(sync: UseRecordSyncResult): { text: string; tone: "d
   if (status.state === "error") {
     return { text: status.pending ? `계정에 보내지 못한 변경이 ${status.pending}건 있어요. 이 기기에는 저장됐어요.` : "계정 기록을 새로 받아 오지 못했어요.", tone: "warn", retry: true };
   }
+  if (status.rejected) {
+    return { text: `계정에 저장할 수 없는 변경이 ${status.rejected}건 있어요. 이 기기에만 남아 있어요.`, tone: "warn", retry: false };
+  }
   if (status.state === "syncing" || status.pending) return { text: "계정에 보내고 있어요.", tone: "busy", retry: false };
   if (status.state === "loading") return { text: "계정 기록을 받아 오고 있어요.", tone: "busy", retry: false };
   return { text: "기록이 계정에 저장돼 있어요.", tone: "done", retry: false };

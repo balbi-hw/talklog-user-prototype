@@ -55,8 +55,12 @@ export function notifyRecordsChanged() {
   listeners.forEach((listener) => listener());
 }
 
-export function isRecordScopeResolved(): boolean {
-  return scope.kind !== "pending";
+/**
+ * 화면이 기록을 읽어도 되는지. 로그인 여부를 모르거나 계정 기록을 아직 받아 오지 못했으면 false 다.
+ * 이때 화면은 이전 범위(기기)의 목록을 남기지 말고 받아 오는 중으로 보여야 한다 (FR-003).
+ */
+export function isRecordScopeReady(): boolean {
+  return scope.kind === "device" || (scope.kind === "account" && scope.loaded);
 }
 
 /**

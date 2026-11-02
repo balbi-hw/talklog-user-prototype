@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { isRecordKey, isRecordScopeResolved, subscribeRecordScope } from "../lib/record-scope";
+import { isRecordKey, isRecordScopeReady, subscribeRecordScope } from "../lib/record-scope";
 import { createRoomId, isRoomLanguage, isValidPartner, MOCK_ROOM, normalizePartner, readRooms,
   writeRooms, type CreateRoomResult, type Room, type RoomDraft, type RoomsState } from "../lib/rooms";
 
@@ -13,8 +13,9 @@ export function useRooms() {
   }, []);
   const fail = useCallback(() => setState((current) => ({ ...current, status: "unavailable" })), []);
   const reload = useCallback(() => {
-    // 010: 로그인 여부를 알기 전에는 읽지 않는다. 기기 기록이 잠깐 보였다가 바뀌면 안 된다.
-    if (!isRecordScopeResolved()) { setState((current) => ({ ...current, status: "loading" })); return; }
+    // 010: 로그인 여부를 알기 전이나 계정 기록을 받아 오기 전에는 읽지 않고, 이전 범위의 목록도 지운다.
+    // 기기 기록이 잠깐 보였다가 바뀌면 사용자는 기록이 바뀌었다고 오해한다.
+    if (!isRecordScopeReady()) { setState({ status: "loading", rooms: [MOCK_ROOM] }); return; }
     const result = readRooms();
     if (result.ok) apply(result.items);
     else fail();

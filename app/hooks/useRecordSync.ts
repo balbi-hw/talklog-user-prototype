@@ -9,7 +9,7 @@ import {
   type DeviceSummary, type ImportResult, type SyncStatus,
 } from "../lib/record-sync";
 
-const SERVER_STATUS: SyncStatus = { state: "idle", pending: 0 };
+const SERVER_STATUS: SyncStatus = { state: "idle", pending: 0, rejected: 0 };
 const SERVER_SCOPE: RecordScope = { kind: "pending" };
 
 /** specs/010-account-records/contracts/use-record-sync.md */
