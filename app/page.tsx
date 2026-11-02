@@ -13,6 +13,8 @@ import RoomCreate from "./components/RoomCreate";
 import RoomSummary from "./components/RoomSummary";
 import { useRooms } from "./hooks/useRooms";
 import { useAccount } from "./hooks/useAccount";
+import { useRecordSync } from "./hooks/useRecordSync";
+import { ImportDialog, RecordSyncBanner } from "./components/RecordSyncNotice";
 import { MOCK_ROOM, roomName, type Room as LearningRoom, type RoomOverview } from "./lib/rooms";
 import VoiceBubble from "./components/VoiceBubble";
 import ReviewHome from "./components/ReviewHome";
@@ -100,6 +102,7 @@ export default function TalklogApp() {
    * 화면이 조건부 렌더링이라 `Room` 이 언마운트되면 화면 안에 둔 상태는 사라진다.
    */
   const account = useAccount();
+  const sync = useRecordSync(account);
   // 확인 링크에서 돌아오면 결과 안내가 보이도록 계정 화면을 연다.
   useEffect(() => { if (account.confirmNotice) setScreen("account"); }, [account.confirmNotice]);
   const understanding = useMessageUnderstanding();
@@ -199,11 +202,12 @@ export default function TalklogApp() {
               : account.state.status === "signed-out" ? "로그인" : "계정"}
           </button>
         </header>
+        <RecordSyncBanner sync={sync} />
 
         {screen === "home" && <Home roomSummary={<RoomSummary items={overviews} status={rooms.status} onOpen={openRoom} onAll={() => go("rooms")} onCreate={() => go("room-create")} onReload={rooms.reload} />}
           reviews={reviews} onOpenRoom={() => go("rooms")} onCards={() => go("cards")}
           onReview={() => { reviews.start(); go("review"); }} />}
-        {screen === "account" && <AccountScreen account={account} onBack={() => go("home")} />}
+        {screen === "account" && <AccountScreen account={account} sync={sync} onBack={() => go("home")} />}
         {screen === "rooms" && <RoomList items={overviews} status={rooms.status} onOpen={openRoom} onCreate={() => go("room-create")} onRemove={removeRoom} onReload={rooms.reload} />}
         {screen === "room-create" && <RoomCreate status={rooms.status} onCreate={rooms.create} onCreated={(room) => openRoom(room.id)} onCancel={() => go("rooms")} />}
         {screen === "room" && (
@@ -251,6 +255,7 @@ export default function TalklogApp() {
           <NavButton active={screen === "cards" || screen === "review"} icon="cards" label="카드" onClick={() => go("cards")} />
         </nav>
 
+        <ImportDialog sync={sync} />
         {blockedNav && (
           <div
             className="leave-confirm"

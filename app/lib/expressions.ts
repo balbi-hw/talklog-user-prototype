@@ -3,7 +3,11 @@
 //
 // 저장소 접근과 순수 함수만 둔다. 상태 관리는 useExpressions 의 몫이다.
 
+import { readRaw, writeRecords } from "./record-scope";
 import type { ExpressionUpdate, SaveFailure, SavedExpression, UpdateFailure } from "./types";
+
+/** 표현·뜻의 최대 글자 수. 계정 저장 테이블의 제약(010 마이그레이션)과 같다. */
+export const TEXT_MAX = 2000;
 
 /**
  * 실패 이유별 화면 문구 (contracts/expression-sheet-ui.md 조항 4).
@@ -48,10 +52,10 @@ export function updateExpressionIn(
 }
 
 /**
- * 저장소 키는 하나이며 JSON 배열을 담는다 (계약 조항 11).
+ * 저장소 키는 범위마다 하나이며 JSON 배열을 담는다 (계약 조항 11).
  * 표현마다 별도 키를 쓰면 목록을 읽을 때 키를 순회해야 하고 순서 보장을 직접 해야 한다.
+ * 키는 로그인 여부에 따라 기기용·계정용으로 나뉜다 (010 `record-scope.ts`).
  */
-const STORAGE_KEY = "talklog.expressions";
 
 /**
  * 중복 판정용 정규화 (R-005).
@@ -104,16 +108,19 @@ function isPunctuationOrSpace(codePoint: number): boolean {
 export function isValidTerm(term: string): boolean {
   const trimmed = term.trim();
   if (trimmed.length === 0) return false;
-  // Array.from 으로 서로게이트 쌍(이모지 등)을 한 글자로 센다.
-  return Array.from(trimmed).some((character) => {
+  // Array.from 으로 서로게이트 쌍(이모지 등)을 한 글자로 센다. Postgres char_length 와 같은 단위다.
+  const characters = Array.from(trimmed);
+  if (characters.length > TEXT_MAX) return false;
+  return characters.some((character) => {
     const codePoint = character.codePointAt(0);
     return codePoint !== undefined && !isPunctuationOrSpace(codePoint);
   });
 }
 
-/** 뜻으로 받아들일 수 있는지 (FR-008). 비어 있지만 않으면 된다 — 모국어 표기는 자유다. */
+/** 뜻으로 받아들일 수 있는지 (FR-008). 비어 있지 않고 길이 상한 안이면 된다 — 모국어 표기는 자유다. */
 export function isValidMeaning(meaning: string): boolean {
-  return meaning.trim().length > 0;
+  const trimmed = meaning.trim();
+  return trimmed.length > 0 && Array.from(trimmed).length <= TEXT_MAX;
 }
 
 /** 저장 시점에 만들고 재사용하지 않는다 (data-model.md §1 검증 규칙). */
@@ -145,12 +152,13 @@ export type ReadResult = { ok: true; items: SavedExpression[] } | { ok: false };
  * 계속 진행한다 (계약 조항 12).
  */
 export function readAll(): ReadResult {
-  let raw: string | null;
-  try {
-    raw = window.localStorage.getItem(STORAGE_KEY);
-  } catch {
-    return { ok: false };
-  }
+  return parseExpressions(readRaw("expressions"));
+}
+
+/** 010: 기기 기록을 계정으로 가져올 때 다른 범위의 원본도 같은 규칙으로 읽는다. */
+export function parseExpressions(read: { ok: true; raw: string | null } | { ok: false }): ReadResult {
+  if (!read.ok) return { ok: false };
+  const raw = read.raw;
 
   if (raw === null) return { ok: true, items: [] };
 
@@ -171,10 +179,5 @@ export function readAll(): ReadResult {
  * 가 난다. 둘 다 삼키지 않고 실패로 알려야 한다 (FR-015, R-003).
  */
 export function writeAll(items: SavedExpression[]): boolean {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-    return true;
-  } catch {
-    return false;
-  }
+  return writeRecords("expressions", items);
 }

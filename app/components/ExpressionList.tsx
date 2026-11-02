@@ -5,6 +5,7 @@ import {
   isValidMeaning,
   isValidTerm,
   normalizeTerm,
+  TEXT_MAX,
   UPDATE_FAILURE_MESSAGE,
 } from "../lib/expressions";
 import type {
@@ -154,6 +155,7 @@ export default function ExpressionList({
                     <input
                       id={`${listId}-term-${index}`}
                       value={editing.term}
+                      maxLength={TEXT_MAX}
                       autoComplete="off"
                       onChange={(event) => {
                         setEditing({ ...editing, term: event.target.value });
@@ -164,6 +166,7 @@ export default function ExpressionList({
                     <textarea
                       id={`${listId}-meaning-${index}`}
                       value={editing.meaning}
+                      maxLength={TEXT_MAX}
                       rows={3}
                       autoFocus
                       onChange={(event) => {

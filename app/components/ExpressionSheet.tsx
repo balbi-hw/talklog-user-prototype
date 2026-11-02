@@ -1,6 +1,6 @@
 "use client";
 
-import { isValidMeaning, isValidTerm, SAVE_FAILURE_MESSAGE } from "../lib/expressions";
+import { isValidMeaning, isValidTerm, SAVE_FAILURE_MESSAGE, TEXT_MAX } from "../lib/expressions";
 import { useId } from "react";
 import type { TranscriptSelection } from "../hooks/useTranscriptSelection";
 import type { ExpressionDraft, SaveFailure, SavedExpression, StorageStatus } from "../lib/types";
@@ -108,6 +108,7 @@ export default function ExpressionSheet({
         <input
           id={TERM_INPUT_ID}
           value={draft.term}
+          maxLength={TEXT_MAX}
           onChange={(event) => onTermChange(event.target.value)}
           autoComplete="off"
         />
@@ -120,6 +121,7 @@ export default function ExpressionSheet({
           id={MEANING_INPUT_ID}
           autoFocus
           value={draft.meaning}
+          maxLength={TEXT_MAX}
           onChange={(event) => onMeaningChange(event.target.value)}
           placeholder="이 표현의 뜻을 적어주세요"
           autoComplete="off"

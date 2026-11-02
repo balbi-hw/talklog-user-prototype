@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { isRecordKey, isRecordScopeReady, subscribeRecordScope } from "../lib/record-scope";
 import { createRoomId, isRoomLanguage, isValidPartner, MOCK_ROOM, normalizePartner, readRooms,
-  ROOMS_STORAGE_KEY, writeRooms, type CreateRoomResult, type Room, type RoomDraft, type RoomsState } from "../lib/rooms";
+  writeRooms, type CreateRoomResult, type Room, type RoomDraft, type RoomsState } from "../lib/rooms";
 
 /** 학습방의 단일 소유자. 매 쓰기 전 재읽기하며 실패하면 마지막 정상 목록을 유지한다. */
 export function useRooms() {
@@ -12,6 +13,9 @@ export function useRooms() {
   }, []);
   const fail = useCallback(() => setState((current) => ({ ...current, status: "unavailable" })), []);
   const reload = useCallback(() => {
+    // 010: 로그인 여부를 알기 전이나 계정 기록을 받아 오기 전에는 읽지 않고, 이전 범위의 목록도 지운다.
+    // 기기 기록이 잠깐 보였다가 바뀌면 사용자는 기록이 바뀌었다고 오해한다.
+    if (!isRecordScopeReady()) { setState({ status: "loading", rooms: [MOCK_ROOM] }); return; }
     const result = readRooms();
     if (result.ok) apply(result.items);
     else fail();
@@ -20,10 +24,11 @@ export function useRooms() {
   useEffect(() => {
     reload();
     const onStorage = (event: StorageEvent) => {
-      if (event.key === ROOMS_STORAGE_KEY || event.key === null) reload();
+      if (isRecordKey(event.key, "rooms")) reload();
     };
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    const unsubscribe = subscribeRecordScope(reload);
+    return () => { window.removeEventListener("storage", onStorage); unsubscribe(); };
   }, [reload]);
 
   const create = useCallback((draft: RoomDraft): CreateRoomResult => {

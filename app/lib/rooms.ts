@@ -1,3 +1,4 @@
+import { DEVICE_KEYS, readRaw, writeRecords } from "./record-scope";
 import type { StorageStatus } from "./types";
 
 export const ROOM_LANGUAGES = ["일본어", "영어", "중국어"] as const;
@@ -9,7 +10,7 @@ export type CreateRoomResult = { ok: true; room: Room } | { ok: false; reason: R
 export type RoomOverview = { room: Room; messageCount: number; lastMessageLabel: string | null };
 export type RoomsState = { status: StorageStatus; rooms: Room[] };
 
-export const ROOMS_STORAGE_KEY = "talklog.rooms";
+export const ROOMS_STORAGE_KEY = DEVICE_KEYS.rooms;
 /** 사용자 저장 데이터와 분리된 삭제 불가 예시 학습방. */
 export const MOCK_ROOM: Room = { id: "mock-yuki", partner: "유키", language: "일본어", createdAt: 0 };
 export const ROOM_FAILURE_MESSAGE: Record<RoomFailure, string> = {
@@ -48,9 +49,13 @@ function isRoom(value: unknown): value is Room {
 }
 
 export function readRooms(): { ok: true; items: Room[] } | { ok: false } {
-  let raw: string | null;
-  try { raw = window.localStorage.getItem(ROOMS_STORAGE_KEY); }
-  catch { return { ok: false }; }
+  return parseRooms(readRaw("rooms"));
+}
+
+/** 010: 기기 기록을 계정으로 가져올 때 다른 범위의 원본도 같은 규칙으로 읽는다. */
+export function parseRooms(read: { ok: true; raw: string | null } | { ok: false }): { ok: true; items: Room[] } | { ok: false } {
+  if (!read.ok) return { ok: false };
+  const raw = read.raw;
   if (raw === null) return { ok: true, items: [] };
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -66,10 +71,7 @@ export function readRooms(): { ok: true; items: Room[] } | { ok: false } {
 }
 
 export function writeRooms(items: Room[]): boolean {
-  try {
-    window.localStorage.setItem(ROOMS_STORAGE_KEY, JSON.stringify(items));
-    return true;
-  } catch { return false; }
+  return writeRecords("rooms", items);
 }
 
 export function createRoomId(): string {

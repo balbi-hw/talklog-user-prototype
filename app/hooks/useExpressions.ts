@@ -10,6 +10,7 @@ import {
   updateExpressionIn,
   writeAll,
 } from "../lib/expressions";
+import { isRecordKey, isRecordScopeReady, subscribeRecordScope } from "../lib/record-scope";
 import type {
   ExpressionDraft,
   ExpressionUpdate,
@@ -97,6 +98,14 @@ export function useExpressions(): UseExpressionsResult {
    * 서버 렌더 결과와 달라져 hydration 이 어긋난다 (R-004).
    */
   const reload = useCallback(() => {
+    // 010: 로그인 여부를 알기 전이나 계정 기록을 받아 오기 전에는 읽지 않고, 이전 범위의 목록도 지운다.
+    // 범위가 바뀌면 이전 범위의 목록을 쓰기 기준으로 삼지 않는다.
+    hasLoadedRef.current = false;
+    if (!isRecordScopeReady()) {
+      applyExpressions([]);
+      setStatus("loading");
+      return;
+    }
     const result = readAll();
     if (!result.ok) {
       setStatus("unavailable");
@@ -107,7 +116,13 @@ export function useExpressions(): UseExpressionsResult {
     setStatus("ready");
   }, [applyExpressions]);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    reload();
+    const onStorage = (event: StorageEvent) => { if (isRecordKey(event.key, "expressions")) reload(); };
+    window.addEventListener("storage", onStorage);
+    const unsubscribe = subscribeRecordScope(reload);
+    return () => { window.removeEventListener("storage", onStorage); unsubscribe(); };
+  }, [reload]);
 
   /**
    * 렌더 중에 불러도 안전하도록 ref 가 아니라 상태를 읽는다. 화면은 "지금 보이는 목록"을
