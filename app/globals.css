@@ -288,3 +288,28 @@ h1 { font-size:30px; line-height:1.24; letter-spacing:-1.4px; margin-bottom:10px
 .room-heading p{line-height:1.6}
 .room-partner-avatar{width:42px;height:42px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--mint);color:var(--green);font-weight:800}
 .room-list-screen :focus-visible,.room-create-screen :focus-visible,.room-summary :focus-visible,.room-context button:focus-visible,.room-heading h1:focus{outline:2px solid var(--green);outline-offset:3px}
+
+/* 009 계정 */
+.topbar-account{max-width:140px;border:1px solid var(--line);border-radius:99px;background:var(--white);color:var(--green);padding:8px 12px;font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbar-account:focus-visible,.account-screen button:focus-visible,.account-screen input:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+.account-screen h1:focus{outline:none}
+.account-status,.account-local,.account-field-error{font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+.account-status{color:var(--muted)}
+.account-local{margin-top:24px;padding:12px 14px;border-radius:12px;background:var(--cream);color:var(--muted)}
+.account-field-error{color:var(--coral);margin:0}
+.account-form input[aria-invalid="true"]{border-color:var(--coral)}
+.account-modes{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px;border-radius:14px;background:var(--color-f0f0eb)}
+.account-modes button{border:0;border-radius:11px;padding:10px;background:var(--transparent);color:var(--muted);font-size:13px;font-weight:700}
+.account-modes button[aria-pressed="true"]{background:var(--white);color:var(--green)}
+.account-form{margin-top:16px}
+.account-banner{display:flex;align-items:center;gap:10px;margin:0 0 16px;padding:10px 12px;border:1px solid var(--coral);border-radius:12px;font-size:12px;line-height:1.6;color:var(--coral)}
+.account-banner.done{border-color:var(--green);color:var(--green)}
+.account-banner p{margin:0;flex:1;overflow-wrap:anywhere}
+.account-banner button{border:0;background:var(--transparent);color:inherit;font-weight:700;font-size:12px}
+.account-card{display:flex;align-items:center;gap:12px;padding:16px;border:1px solid var(--line);border-radius:16px;min-width:0}
+.account-card>div{min-width:0}
+.account-card strong{display:block;font-size:15px;overflow-wrap:anywhere}
+.account-card p{margin:2px 0 0;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.account-avatar{flex:none;width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:var(--mint);color:var(--green);font-weight:800}
+.account-secondary{margin-top:12px;border:1px solid var(--line);border-radius:12px;background:var(--cream);padding:11px 13px;font-size:12px;font-weight:700}
+.account-confirm .room-actions{margin-top:8px}
