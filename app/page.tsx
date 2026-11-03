@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import AccountScreen from "./components/AccountScreen";
 import ExpressionList from "./components/ExpressionList";
 import HomeDate from "./components/HomeDate";
@@ -8,14 +8,18 @@ import MessageUnderstanding from "./components/MessageUnderstanding";
 import TranscriptCapture from "./components/TranscriptCapture";
 import { useMessageUnderstanding, type UseMessageUnderstandingResult } from "./hooks/useMessageUnderstanding";
 import Recorder from "./components/Recorder";
-import RoomList from "./components/RoomList";
+import RoomList, { type RemoveRoomResult } from "./components/RoomList";
+import RoomInvite, { type InviteAvailability } from "./components/RoomInvite";
+import InviteJoin from "./components/InviteJoin";
+import { usePartnerRooms, type UsePartnerRoomsResult } from "./hooks/usePartnerRooms";
+import { LEAVE_FAILURE_MESSAGE, type SharedRoom } from "./lib/partner";
 import RoomCreate from "./components/RoomCreate";
 import RoomSummary from "./components/RoomSummary";
 import { useRooms } from "./hooks/useRooms";
 import { useAccount } from "./hooks/useAccount";
 import { useRecordSync } from "./hooks/useRecordSync";
 import { ImportDialog, RecordSyncBanner } from "./components/RecordSyncNotice";
-import { MOCK_ROOM, roomName, type Room as LearningRoom, type RoomOverview } from "./lib/rooms";
+import { MOCK_ROOM, ROOM_FAILURE_MESSAGE, roomName, type Room as LearningRoom, type RoomOverview } from "./lib/rooms";
 import VoiceBubble from "./components/VoiceBubble";
 import ReviewHome from "./components/ReviewHome";
 import ReviewEntry from "./components/ReviewEntry";
@@ -79,22 +83,6 @@ export default function TalklogApp() {
   const [activityByRoom, setActivityByRoom] = useState<Record<string, number>>({});
   const messagesRef = useRef(messagesByRoom);
   messagesRef.current = messagesByRoom;
-  const selectedRoom = rooms.rooms.find((room) => room.id === selectedRoomId) ?? MOCK_ROOM;
-  const overviews: RoomOverview[] = [...rooms.rooms]
-    .sort((a, b) => (activityByRoom[b.id] ?? b.createdAt) - (activityByRoom[a.id] ?? a.createdAt) || a.id.localeCompare(b.id))
-    .map((room) => {
-      const messages = messagesByRoom[room.id] ?? [];
-      const sentAt = activityByRoom[room.id];
-      return { room, messageCount: messages.length,
-        lastMessageLabel: messages.length === 0 ? null : sentAt !== undefined
-          ? new Date(sentAt).toLocaleString("ko-KR") : "예시 오전 9:46" };
-    });
-
-  useEffect(() => () => {
-    Object.values(messagesRef.current).flat().forEach((message) => {
-      if (message.url) URL.revokeObjectURL(message.url);
-    });
-  }, []);
 
   /**
    * 표현 모음의 단일 소유자 (contracts/use-expressions.md). 저장은 `Room`·`Feedback`
@@ -103,6 +91,36 @@ export default function TalklogApp() {
    */
   const account = useAccount();
   const sync = useRecordSync(account);
+  // 011: 로그인 상태의 학습방은 서버 메시지를 쓴다. 로그아웃·키 없음·예시 학습방은 위의 메모리 경로 그대로다.
+  const partner = usePartnerRooms(account, sync.scope);
+  // 학습 짝이 들어오면 두 사람 모두 서로의 표시 이름으로 학습방을 본다 (contracts/use-partner-rooms.md 조항 10).
+  const displayRooms = rooms.rooms.map((room) => {
+    const name = partner.shared(room.id)?.partnerName;
+    return name && name !== room.partner ? { ...room, partner: name } : room;
+  });
+  const selectedRoom = displayRooms.find((room) => room.id === selectedRoomId) ?? MOCK_ROOM;
+  const overviews: RoomOverview[] = displayRooms
+    .map((room) => {
+      const server = partner.messages(room.id);
+      const messages = server ?? messagesByRoom[room.id] ?? [];
+      const sentAt = server ? partner.lastMessageAt(room.id) ?? undefined : activityByRoom[room.id];
+      return { room, sentAt, messages, server: server !== null };
+    })
+    .sort((a, b) => (b.sentAt ?? b.room.createdAt) - (a.sentAt ?? a.room.createdAt) || a.room.id.localeCompare(b.room.id))
+    .map(({ room, sentAt, messages, server }) => ({ room, messageCount: messages.length,
+      lastMessageLabel: messages.length === 0 ? null : sentAt !== undefined
+        ? new Date(sentAt).toLocaleString("ko-KR") : server ? null : "예시 오전 9:46" }));
+  const inviteAvailability: InviteAvailability = account.state.status === "unavailable" ? "unavailable"
+    : account.state.status === "signed-out" ? "signed-out"
+    : !partner.enabled || partner.status === "idle" || partner.status === "loading" ? "loading"
+    : partner.status === "error" ? "error" : "ready";
+
+  useEffect(() => () => {
+    Object.values(messagesRef.current).flat().forEach((message) => {
+      if (message.url) URL.revokeObjectURL(message.url);
+    });
+  }, []);
+
   // 확인 링크에서 돌아오면 결과 안내가 보이도록 계정 화면을 연다.
   useEffect(() => { if (account.confirmNotice) setScreen("account"); }, [account.confirmNotice]);
   const understanding = useMessageUnderstanding();
@@ -138,7 +156,8 @@ export default function TalklogApp() {
    * 버릴지 유지할지 사용자가 고르게 한다 (전이 T7 · T14).
    */
   const go = (next: Screen) => {
-    if (screen === "room" && next !== "room" && pendingRef.current.hasPending) {
+    // 011: 보내는 중인 메시지가 있어도 떠나기 전에 확인한다 (edge case, quickstart P19).
+    if (screen === "room" && next !== "room" && (pendingRef.current.hasPending || partner.hasSending())) {
       setBlockedNav(next);
       return;
     }
@@ -148,7 +167,7 @@ export default function TalklogApp() {
   const keepRecording = () => setBlockedNav(null);
 
   const discardAndLeave = () => {
-    pendingRef.current.discard();
+    if (pendingRef.current.hasPending) pendingRef.current.discard();
     const next = blockedNav;
     setBlockedNav(null);
     if (next) move(next);
@@ -159,8 +178,29 @@ export default function TalklogApp() {
     go("room");
   };
 
-  const removeRoom = (id: string): boolean => {
-    if (!rooms.remove(id)) return false;
+  // 학습방을 열면 빠진 메시지를 받아 오고 서명 주소를 갱신한다 (FR-009).
+  const openPartnerRoom = partner.openRoom;
+  useEffect(() => {
+    if (screen === "room" && partner.enabled) openPartnerRoom(selectedRoom.id);
+  }, [screen, selectedRoom.id, partner.enabled, openPartnerRoom]);
+
+  /**
+   * 011 FR-012: 공유 정보가 있는 학습방을 지우는 것은 나가기다. 온라인으로 먼저 나가고,
+   * 성공하면 010 경로로 내 학습방을 지운다. 실패하면 지우지 않고 이유를 알린다 (research R8).
+   */
+  const removeRoom = async (id: string): Promise<RemoveRoomResult> => {
+    const serverMessages = partner.messages(id);
+    if (serverMessages !== null) {
+      // 공유 정보를 모르면 나가기인지 지우기인지 알 수 없어 지우지 않는다. 공유한 적 없는 학습방은 받아 온 뒤에만 그냥 지운다 (D3).
+      if (!partner.shared(id) && partner.status !== "ready") {
+        return { ok: false, message: "학습 짝과 함께 쓰는 학습방인지 아직 확인하지 못해 지울 수 없어요. 연결을 확인하고 잠시 뒤 다시 시도해 주세요." };
+      }
+      if (partner.hasSending(id)) return { ok: false, message: "보내는 중인 음성 메시지가 있어요. 다 보낸 뒤 다시 시도해 주세요." };
+      const left = await partner.leave(id);
+      if (!left.ok) return { ok: false, message: LEAVE_FAILURE_MESSAGE[left.reason] };
+      understanding.remove(serverMessages.map((message) => message.id));
+    }
+    if (!rooms.remove(id)) return { ok: false, message: ROOM_FAILURE_MESSAGE["storage-unavailable"] };
     understanding.remove((messagesByRoom[id] ?? []).map((message) => message.id));
     (messagesByRoom[id] ?? []).forEach((message) => {
       if (message.url) URL.revokeObjectURL(message.url);
@@ -176,10 +216,14 @@ export default function TalklogApp() {
       return next;
     });
     if (selectedRoomId === id) setSelectedRoomId(MOCK_ROOM.id);
-    return true;
+    return { ok: true };
   };
 
+  const sendPartnerMessage = partner.send;
+  const serverPath = partner.messages(selectedRoom.id) !== null;
   const addRecordedMessage = useCallback((recording: SentRecording) => {
+    // 011: 서버 경로면 학습 짝에게 보낸다. 녹음의 blob 주소는 훅이 맡는다.
+    if (serverPath) { sendPartnerMessage(selectedRoom.id, selectedRoom.language, recording); return; }
     const sentAt = Date.now();
     setMessagesByRoom((current) => ({ ...current, [selectedRoom.id]: [
       ...(current[selectedRoom.id] ?? []),
@@ -187,7 +231,7 @@ export default function TalklogApp() {
         sentAtLabel: timeLabel(), source: "recorded", url: recording.url, readLabel: null },
     ] }));
     setActivityByRoom((current) => ({ ...current, [selectedRoom.id]: sentAt }));
-  }, [selectedRoom.id]);
+  }, [selectedRoom.id, selectedRoom.language, serverPath, sendPartnerMessage]);
 
   return (
     <main className="app-shell">
@@ -207,16 +251,26 @@ export default function TalklogApp() {
         {screen === "home" && <Home roomSummary={<RoomSummary items={overviews} status={rooms.status} onOpen={openRoom} onAll={() => go("rooms")} onCreate={() => go("room-create")} onReload={rooms.reload} />}
           reviews={reviews} onOpenRoom={() => go("rooms")} onCards={() => go("cards")}
           onReview={() => { reviews.start(); go("review"); }} />}
-        {screen === "account" && <AccountScreen account={account} sync={sync} onBack={() => go("home")} />}
-        {screen === "rooms" && <RoomList items={overviews} status={rooms.status} onOpen={openRoom} onCreate={() => go("room-create")} onRemove={removeRoom} onReload={rooms.reload} />}
+        {screen === "account" && <AccountScreen account={account} sync={sync} unsentMessages={partner.unsentCount()} onBack={() => go("home")} />}
+        {screen === "rooms" && <RoomList items={overviews} status={rooms.status} onOpen={openRoom} onCreate={() => go("room-create")} onRemove={removeRoom} onReload={rooms.reload}
+          isShared={(id) => { const shared = partner.shared(id); return !!shared && (shared.role === "partner" || !!shared.partnerName); }}
+          inviteJoin={<InviteJoin availability={inviteAvailability} preview={partner.preview} join={partner.join}
+            onJoined={openRoom} onAccount={() => go("account")} onRetry={partner.retry} />} />}
         {screen === "room-create" && <RoomCreate status={rooms.status} onCreate={rooms.create} onCreated={(room) => openRoom(room.id)} onCancel={() => go("rooms")} />}
         {screen === "room" && (
           <Room
             key={selectedRoom.id}
             room={selectedRoom}
             onRooms={() => go("rooms")}
-            messages={messagesByRoom[selectedRoom.id] ?? []}
+            messages={partner.messages(selectedRoom.id) ?? messagesByRoom[selectedRoom.id] ?? []}
             onSendRecording={addRecordedMessage}
+            partner={serverPath ? partner : null}
+            shared={partner.shared(selectedRoom.id)}
+            invite={selectedRoom.id === MOCK_ROOM.id ? null : <RoomInvite availability={inviteAvailability}
+              shared={partner.shared(selectedRoom.id)} state={partner.invite.state(selectedRoom.id)}
+              onCreate={() => { void partner.invite.create(selectedRoom.id, selectedRoom.language); }}
+              onRevoke={() => { void partner.invite.revoke(selectedRoom.id); }}
+              onRetry={partner.retry} onAccount={() => go("account")} />}
             understanding={understanding}
             onFeedback={() => go("feedback")}
             onPendingChange={reportPending}
@@ -267,16 +321,30 @@ export default function TalklogApp() {
             }}
           >
             <div className="leave-card">
-              <strong id="leave-title">아직 보내지 않은 녹음이 있어요</strong>
-              <p>화면을 옮기면 이 녹음은 사라져요.</p>
-              <div className="leave-actions">
-                <button autoFocus onClick={keepRecording}>
-                  녹음 계속하기
-                </button>
-                <button className="leave-discard" onClick={discardAndLeave}>
-                  버리고 이동
-                </button>
-              </div>
+              {pendingRef.current.hasPending ? <>
+                <strong id="leave-title">아직 보내지 않은 녹음이 있어요</strong>
+                <p>화면을 옮기면 이 녹음은 사라져요.{partner.hasSending() ? " 보내는 중인 음성 메시지는 계속 보내요." : ""}</p>
+                <div className="leave-actions">
+                  <button autoFocus onClick={keepRecording}>
+                    녹음 계속하기
+                  </button>
+                  <button className="leave-discard" onClick={discardAndLeave}>
+                    버리고 이동
+                  </button>
+                </div>
+              </> : <>
+                {/* 011: 보내기는 화면을 옮겨도 이어진다. 새로고침하거나 창을 닫으면 사라진다는 사실을 알린다. */}
+                <strong id="leave-title">아직 보내는 중인 음성 메시지가 있어요</strong>
+                <p>화면을 옮겨도 보내기는 이어져요. 새로고침하거나 창을 닫으면 보내는 중인 음성 메시지는 사라져요.</p>
+                <div className="leave-actions">
+                  <button autoFocus onClick={keepRecording}>
+                    이 화면에 머무르기
+                  </button>
+                  <button className="leave-discard" onClick={discardAndLeave}>
+                    이동
+                  </button>
+                </div>
+              </>}
             </div>
           </div>
         )}
@@ -310,6 +378,9 @@ function Room({
   storageStatus,
   findDuplicate,
   onSaveExpression,
+  partner,
+  shared,
+  invite,
 }: {
   room: LearningRoom;
   onRooms: () => void;
@@ -318,6 +389,10 @@ function Room({
   understanding: UseMessageUnderstandingResult;
   onFeedback: () => void;
   onPendingChange: (pending: PendingRecording) => void;
+  /** 011: 서버 경로일 때만 있다. null 이면 지금의 메모리 경로다. */
+  partner: UsePartnerRoomsResult | null;
+  shared: SharedRoom | null;
+  invite: ReactNode;
 } & ExpressionSaving) {
   const roomHeadingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => { roomHeadingRef.current?.focus(); }, []);
@@ -352,20 +427,48 @@ function Room({
 
   const renderBubble = (message: VoiceMessage) => {
     const url = message.url;
+    const failed = message.delivery === "failed";
     return (
       <VoiceBubble
         message={message}
         isActive={playback.activeId === message.id}
         progress={playback.progress}
         onToggle={url ? () => playback.toggle(message.id, url, message.durationMs) : undefined}
+        playFailed={playback.failedId === message.id}
+        onRetryPlay={url ? async () => {
+          // 만료된 서명 주소일 수 있으니 서버 경로면 새 주소를 받은 뒤 재생한다 (D4).
+          const fresh = partner ? await partner.freshUrl(room.id, message.id) : url;
+          playback.toggle(message.id, fresh ?? url, message.durationMs);
+        } : undefined}
+        onResend={failed && partner ? () => partner.resend(room.id, message.id) : undefined}
+        // 지운 메시지 자리는 사라지므로 학습방 제목으로 포커스를 옮긴다 (D6).
+        onDiscard={failed && partner ? () => { partner.discard(room.id, message.id); roomHeadingRef.current?.focus(); } : undefined}
       />
     );
   };
+  const messagesStatus = partner ? partner.messagesStatus(room.id) : "ready";
+  const closed = !!shared?.closed;
 
   return <section className="screen room-screen">
     <div className="room-heading"><div className="room-partner-avatar" aria-hidden="true">{Array.from(room.partner)[0]}</div><div><h1 ref={roomHeadingRef} tabIndex={-1}>{roomName(room)}</h1><p>학습 짝 {room.partner} · {room.language}{room.id === MOCK_ROOM.id ? " · 예시 학습방" : ""}</p></div></div>
-    <div className="room-context"><button onClick={onRooms}>← 학습방 목록</button><p>학습 짝에게 실제로 전달되지는 않아요. 녹음은 새로고침하면 사라져요.</p></div>
-    {messages.length === 0 && <p className="room-empty" role="status">아직 음성 메시지가 없어요. 첫 음성 메시지를 녹음해보세요. 보낸 뒤 스크립트와 번역을 열 수 있어요.</p>}
+    {invite}
+    <div className="room-context"><button onClick={onRooms}>← 학습방 목록</button><p>{!partner
+      ? "학습 짝에게 실제로 전달되지는 않아요. 녹음은 새로고침하면 사라져요."
+      : shared?.partnerName
+        ? "보낸 음성 메시지는 계정에 저장되고 학습 짝에게 전달돼요."
+        : "보낸 음성 메시지는 계정에 저장돼요. 학습 짝이 들어오면 지난 메시지도 함께 봐요."}</p></div>
+    {/* 011 FR-010: 바로 받는 연결이 끊겨도 재생·녹음·전송은 막지 않는다. */}
+    {partner?.connection === "lost" && <div className="partner-connection" role="status">
+      <p>새 메시지를 바로 받지 못하고 있어요.</p>
+      <button type="button" onClick={partner.retry}>다시 시도</button>
+    </div>}
+    {messages.length === 0 && messagesStatus === "loading" && <p className="room-empty" role="status">음성 메시지를 받아 오고 있어요.</p>}
+    {messages.length === 0 && messagesStatus === "error" && <div className="room-notice" role="status">
+      <p>음성 메시지를 받아 오지 못했어요.</p>
+      <button type="button" onClick={() => partner?.retry()}>다시 시도</button>
+    </div>}
+    {messages.length === 0 && messagesStatus === "unknown" && <p className="room-empty" role="status">학습방 정보를 받아 오면 지난 음성 메시지가 보여요. 지금도 녹음해 보낼 수 있어요.</p>}
+    {messages.length === 0 && messagesStatus === "ready" && <p className="room-empty" role="status">아직 음성 메시지가 없어요. 첫 음성 메시지를 녹음해보세요. 보낸 뒤 스크립트와 번역을 열 수 있어요.</p>}
     <div className="day-divider"><span>음성 메시지</span></div>
 
     {messages.map((message) => message.sender === "partner" ? (
@@ -388,6 +491,9 @@ function Room({
             </>}
             {showTranslation && <div id="partner-translation" className="message-details translation-detail"><span>번역 · 예시</span><p>주말에는 무엇을 하며 보냈어?</p></div>}
           </>}
+          {/* 011: 학습 짝이 실제로 보낸 메시지는 내 메시지와 같은 방식(007)으로 스크립트·번역을 요청한다. */}
+          {message.source === "recorded" && <MessageUnderstanding message={message} room={room} understanding={understanding}
+            storageStatus={storageStatus} findDuplicate={findDuplicate} onSaveExpression={onSaveExpression} />}
           <small>{message.sentAtLabel}</small>
         </div>
       </div>
@@ -397,14 +503,14 @@ function Room({
           {renderBubble(message)}
           {message.source === "recorded" && <MessageUnderstanding message={message} room={room} understanding={understanding}
             storageStatus={storageStatus} findDuplicate={findDuplicate} onSaveExpression={onSaveExpression} />}
-          <small>{[message.readLabel, message.sentAtLabel].filter(Boolean).join(" · ")}</small>
+          <small>{[message.readLabel, (message.delivery ?? "sent") === "sent" ? message.sentAtLabel : null].filter(Boolean).join(" · ")}</small>
         </div>
       </div>
     ))}
 
     {room.id === MOCK_ROOM.id && <button className="feedback-banner" onClick={onFeedback}><span className="spark">✦</span><div><strong>내 문장을 확인해볼까요?</strong><p>예시 스크립트와 다듬은 문장을 확인해요</p></div><b>→</b></button>}
 
-    <Recorder
+    {closed ? <p className="room-closed" role="status">학습 짝이 나갔어요. 지난 음성 메시지는 그대로 볼 수 있지만 더 보낼 수 없어요.</p> : <Recorder
       state={recorder.state}
       micStatus={recorder.micStatus}
       elapsedMs={recorder.elapsedMs}
@@ -417,7 +523,7 @@ function Room({
       onRetake={handleRetake}
       onCancel={handleCancel}
       onSend={recorder.send}
-    />
+    />}
   </section>;
 }
 

@@ -11,11 +11,16 @@ import {
 
 type Mode = "sign-in" | "sign-up";
 
-/** 기록이 어디에 저장되는지 (010 FR-001·FR-002, 원칙 II). 녹음한 음성은 아직 서버에 올리지 않는다. */
+/** 기록이 어디에 저장되는지 (010 FR-001·FR-002, 원칙 II). 011 부터 로그인한 동안 보낸 음성 메시지도 계정에 저장된다 (FR-015). */
 const SIGNED_OUT_NOTICE = "로그인하지 않으면 학습방·표현·카드·복습 기록은 이 기기에만 저장돼요.";
-const SIGNED_IN_NOTICE = "로그인한 동안 학습방·표현·카드·복습 기록은 계정에 저장돼요. 녹음한 음성은 아직 계정에 올라가지 않아요.";
+const SIGNED_IN_NOTICE = "로그인한 동안 학습방·표현·카드·복습 기록과 학습 짝과 주고받은 음성 메시지는 계정에 저장돼요.";
 
-export default function AccountScreen({ account, sync, onBack }: { account: UseAccountResult; sync: UseRecordSyncResult; onBack: () => void }) {
+export default function AccountScreen({ account, sync, unsentMessages = 0, onBack }: {
+  account: UseAccountResult; sync: UseRecordSyncResult;
+  /** 011: 보내는 중이거나 보내지 못한 음성 메시지 수. 로그아웃하면 사라진다 (D8). */
+  unsentMessages?: number;
+  onBack: () => void;
+}) {
   const { state, confirmNotice, dismissConfirmNotice } = account;
   const headingRef = useRef<HTMLHeadingElement>(null);
   const previousStatus = useRef(state.status);
@@ -46,7 +51,7 @@ export default function AccountScreen({ account, sync, onBack }: { account: UseA
 
     {state.status === "signed-out" && <AccountForm account={account} onViewChange={focusHeading} />}
 
-    {state.status === "signed-in" && <SignedIn account={account} sync={sync} userId={state.user.id} name={state.user.displayName} email={state.user.email} />}
+    {state.status === "signed-in" && <SignedIn account={account} sync={sync} unsentMessages={unsentMessages} userId={state.user.id} name={state.user.displayName} email={state.user.email} />}
 
     {state.status === "signed-out" && <p className="account-local">{SIGNED_OUT_NOTICE}</p>}
     {state.status === "signed-in" && <p className="account-local">{SIGNED_IN_NOTICE}</p>}
@@ -136,8 +141,8 @@ function AccountForm({ account, onViewChange }: { account: UseAccountResult; onV
   </>;
 }
 
-function SignedIn({ account, sync, userId, name, email }: {
-  account: UseAccountResult; sync: UseRecordSyncResult; userId: string; name: string; email: string;
+function SignedIn({ account, sync, unsentMessages, userId, name, email }: {
+  account: UseAccountResult; sync: UseRecordSyncResult; unsentMessages: number; userId: string; name: string; email: string;
 }) {
   const [confirming, setConfirming] = useState(false);
   const [importNotice, setImportNotice] = useState<string | null>(null);
@@ -178,6 +183,7 @@ function SignedIn({ account, sync, userId, name, email }: {
       onKeyDown={(event) => { if (event.key === "Escape" && !busy) cancel(); }}>
       <p id="account-logout-title"><strong>이 기기에서 로그아웃할까요?</strong><br />계정 기록은 계정에 남고, 다시 로그인하면 받아 와요. 로그인 전에 이 기기에 저장한 기록도 그대로 남아요.</p>
       {pending > 0 && <p className="room-notice">아직 계정에 보내지 못한 변경이 {pending}건 있어요. 지금 로그아웃하면 이 변경은 사라져요.</p>}
+      {unsentMessages > 0 && <p className="room-notice">보내는 중이거나 보내지 못한 음성 메시지가 {unsentMessages}개 있어요. 지금 로그아웃하면 이 음성 메시지는 학습 짝에게 가지 않고 사라져요.</p>}
       {failure && <p className="room-notice" role="alert">{ACCOUNT_FAILURE_MESSAGE[failure]}</p>}
       {busy && <p className="account-status" role="status">로그아웃하고 있어요.</p>}
       <div className="room-actions">

@@ -24,6 +24,8 @@ export type VoiceMessage = {
   source: MessageSource;
   url: string | null;
   readLabel: string | null;
+  /** 011: 학습 짝에게 보내는 상태. 없으면 "sent" 다 (메모리 경로·예시 메시지). */
+  delivery?: "sent" | "sending" | "failed";
 };
 
 /** 마이크 사용 상태. 녹음 영역이 무엇을 보여줄지 결정한다 (data-model.md §3). */
