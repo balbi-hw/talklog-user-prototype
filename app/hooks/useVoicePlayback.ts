@@ -13,6 +13,8 @@ export type UseVoicePlaybackResult = {
   positionMs: number;
   durationMs: number;
   progress: number;
+  /** 011: 마지막으로 재생하지 못한 대상. 다시 재생을 시작하면 지운다. */
+  failedId: string | null;
   toggle: (id: string, url: string, durationMs: number) => void;
   stop: () => void;
 };
@@ -29,6 +31,8 @@ export function useVoicePlayback(): UseVoicePlaybackResult {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [positionMs, setPositionMs] = useState(0);
   const [durationMs, setDurationMs] = useState(0);
+  const [failedId, setFailedId] = useState<string | null>(null);
+  const currentIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const audio = new Audio();
@@ -41,12 +45,22 @@ export function useVoicePlayback(): UseVoicePlaybackResult {
       setPositionMs(0);
     };
 
+    // 소리를 받아 오지 못하면(서명 주소 만료, 연결 끊김) 재생 실패로 알린다.
+    const handleError = () => {
+      if (!audio.getAttribute("src")) return;
+      setFailedId(currentIdRef.current);
+      setActiveId(null);
+      setPositionMs(0);
+    };
+
     audio.addEventListener("timeupdate", handleTimeUpdate);
     audio.addEventListener("ended", handleEnded);
+    audio.addEventListener("error", handleError);
 
     return () => {
       audio.removeEventListener("timeupdate", handleTimeUpdate);
       audio.removeEventListener("ended", handleEnded);
+      audio.removeEventListener("error", handleError);
       audio.pause();
       audio.removeAttribute("src");
       audioRef.current = null;
@@ -74,11 +88,15 @@ export function useVoicePlayback(): UseVoicePlaybackResult {
       // 다른 대상이면 이전 재생을 멈추고 새 대상을 처음부터 재생한다 (FR-012).
       audio.pause();
       audio.src = url;
+      currentIdRef.current = id;
+      setFailedId(null);
       setDurationMs(nextDurationMs);
       setPositionMs(0);
       setActiveId(id);
-      void audio.play().catch(() => {
+      void audio.play().catch((error: unknown) => {
         setActiveId(null);
+        // 다른 대상으로 바뀌며 끊긴 재생(AbortError)은 실패가 아니다.
+        if (currentIdRef.current === id && !(error instanceof DOMException && error.name === "AbortError")) setFailedId(id);
       });
     },
     [activeId, stop],
@@ -87,5 +105,5 @@ export function useVoicePlayback(): UseVoicePlaybackResult {
   // research.md R-003: audio.duration 은 Infinity 일 수 있어 분모로 쓰지 않는다.
   const progress = durationMs > 0 ? Math.min(1, positionMs / durationMs) : 0;
 
-  return { activeId, positionMs, durationMs, progress, toggle, stop };
+  return { activeId, positionMs, durationMs, progress, failedId, toggle, stop };
 }

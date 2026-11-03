@@ -19,6 +19,7 @@ export default function MessageUnderstanding({ message, room, understanding, ...
   const id = useId();
   const state = understanding.states[message.id] ?? INITIAL_UNDERSTANDING;
   const language = LANGUAGE_CODE[room.language];
+  const mine = message.sender === "me";
   const run = (kind: "transcript" | "translation" | "refinement", retry = false) => {
     void understanding.request(message, language, kind, retry);
   };
@@ -50,14 +51,17 @@ export default function MessageUnderstanding({ message, room, understanding, ...
       <button className={showTranslation ? "active" : ""} aria-expanded={showTranslation} aria-controls={`${id}-translation`}
         disabled={state.transcript.status !== "success"} aria-describedby={state.transcript.status !== "success" ? `${id}-hint` : undefined}
         onClick={() => { const next = !showTranslation; setShowTranslation(next); if (next) run("translation"); }}>번역 {showTranslation ? "⌃" : "⌄"}</button>
-      <button className={showRefinement ? "active" : ""} aria-expanded={showRefinement} aria-controls={`${id}-refinement`}
+      {/* 011: 다듬기(008)는 내 메시지에만 있다. */}
+      {mine && <button className={showRefinement ? "active" : ""} aria-expanded={showRefinement} aria-controls={`${id}-refinement`}
         disabled={state.transcript.status !== "success"} aria-describedby={state.transcript.status !== "success" ? `${id}-hint` : undefined}
-        onClick={() => { const next = !showRefinement; setShowRefinement(next); if (next) run("refinement"); }}>문장 다듬기 {showRefinement ? "⌃" : "⌄"}</button>
+        onClick={() => { const next = !showRefinement; setShowRefinement(next); if (next) run("refinement"); }}>문장 다듬기 {showRefinement ? "⌃" : "⌄"}</button>}
     </div>
-    {state.transcript.status !== "success" && <p className="understanding-hint" id={`${id}-hint`}>스크립트를 먼저 열어 준비한 뒤 번역하거나 문장을 다듬을 수 있어요.</p>}
+    {state.transcript.status !== "success" && <p className="understanding-hint" id={`${id}-hint`}>{mine
+      ? "스크립트를 먼저 열어 준비한 뒤 번역하거나 문장을 다듬을 수 있어요."
+      : "스크립트를 먼저 열어 준비한 뒤 번역할 수 있어요."}</p>}
     <div id={`${id}-transcript`} hidden={!showTranscript}>{showTranscript && detail("transcript", state.transcript)}</div>
     <div id={`${id}-translation`} hidden={!showTranslation}>{showTranslation && detail("translation", state.translation)}</div>
-    <div id={`${id}-refinement`} hidden={!showRefinement}>
+    {mine && <div id={`${id}-refinement`} hidden={!showRefinement}>
       {showRefinement && <div className="message-details understanding-detail">
         <span>다듬은 문장</span>
         <p className="understanding-status" role="status">{state.refinement.status === "unchanged"
@@ -74,6 +78,6 @@ export default function MessageUnderstanding({ message, room, understanding, ...
         {!["idle", "pending", "success", "unchanged"].includes(state.refinement.status) && <button className="understanding-retry"
           disabled={state.transcript.status !== "success"} onClick={() => run("refinement", true)}>다시 시도</button>}
       </div>}
-    </div>
+    </div>}
   </div>;
 }

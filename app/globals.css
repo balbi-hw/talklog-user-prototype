@@ -326,3 +326,35 @@ h1 { font-size:30px; line-height:1.24; letter-spacing:-1.4px; margin-bottom:10px
 .account-sync.busy{color:var(--muted)}
 .account-sync.warn{color:var(--coral);border-color:var(--coral)}
 .sync-banner button:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+
+/* 011 학습 짝 초대·음성 메시지 — 기존 색상 변수만 사용한다 */
+.room-invite{margin:0 20px 14px;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--cream);font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+.room-invite p{margin:0}
+.room-invite.done{color:var(--green)}
+.room-invite.warn{color:var(--coral);border-color:var(--coral)}
+.room-invite button{margin-top:8px;border:1px solid var(--line);border-radius:12px;background:var(--white);padding:9px 12px;font-size:12px;font-weight:700;color:var(--green)}
+.room-invite-actions{display:flex;flex-wrap:wrap;gap:8px}
+.invite-code{display:block;margin:10px 0 4px;font-size:26px;font-weight:800;letter-spacing:6px;color:var(--ink);font-family:ui-monospace,Menlo,Consolas,monospace}
+.invite-expiry{color:var(--muted)}
+.room-invite-error{color:var(--coral);margin-top:8px}
+.room-invite-notice{color:var(--green);margin-top:6px}
+.room-invite-notice:empty{display:none}
+.invite-join{margin-top:12px}
+.invite-join .room-invite{margin:12px 0 0}
+.invite-join-toggle{border:1px solid var(--line);border-radius:12px;background:var(--cream);padding:11px 13px;font-size:12px;font-weight:700;color:var(--green)}
+.invite-join-form{margin-top:12px}
+.invite-join-form>p{margin:0}
+.invite-code-input{text-transform:uppercase;letter-spacing:4px;font-family:ui-monospace,Menlo,Consolas,monospace}
+.delivery-status{font-size:11px;line-height:1.6;color:var(--muted);margin:6px 0 0;overflow-wrap:anywhere}
+.delivery-status p{margin:0}
+.delivery-status.failed{color:var(--coral)}
+.delivery-actions{display:flex;gap:6px;margin-top:6px;justify-content:flex-end}
+.chat.partner .delivery-actions{justify-content:flex-start}
+.delivery-actions button{border:1px solid var(--line);border-radius:10px;background:var(--white);padding:6px 10px;font-size:11px;font-weight:700;color:var(--green)}
+.partner-connection{display:flex;align-items:center;gap:10px;margin:0 20px 14px;padding:10px 12px;border:1px solid var(--coral);border-radius:12px;background:var(--cream);color:var(--coral);font-size:12px;line-height:1.6}
+.partner-connection p{margin:0;flex:1;overflow-wrap:anywhere}
+.partner-connection button{border:1px solid var(--line);border-radius:10px;background:var(--white);padding:6px 10px;font-size:12px;font-weight:700;color:var(--green);white-space:nowrap}
+.room-screen>.room-notice{margin:0 20px 18px}
+.room-closed{margin:0 20px 20px;padding:16px;border-radius:14px;background:var(--cream);color:var(--muted);font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+.room-invite :focus-visible,.invite-join :focus-visible,.delivery-actions button:focus-visible,.partner-connection button:focus-visible{outline:2px solid var(--green);outline-offset:3px}
+.room-invite button:disabled,.invite-join button:disabled,.room-delete:disabled,.room-confirm button:disabled{opacity:.5;cursor:not-allowed}
